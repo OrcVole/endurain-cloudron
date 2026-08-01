@@ -8,7 +8,7 @@
   "icon": "file://logo.png",
   "version": "0.1.0",
   "upstreamVersion": "0.19.0",
-  "dockerImage": "ghcr.io/orcvole/endurain-cloudron@sha256:3ec3d0f43aa0c7a3a7b14ea175514c748dc851b9bc682796593f7be66f3f8b31",
+  "dockerImage": "ghcr.io/orcvole/endurain-cloudron@sha256:7a0d7c5c72fdb7e28980715faf8186c6997af7cb0bb3f40f88bcad39c3173bf1",
   "healthCheckPath": "/api/v1/about",
   "httpPort": 8080,
   "addons": {

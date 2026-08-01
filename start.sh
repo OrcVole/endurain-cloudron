@@ -217,6 +217,45 @@ export TZ="${TZ:-UTC}"
 # _validate_trusted_proxies at Settings() construction, aborting startup.
 export TRUSTED_PROXIES="${CLOUDRON_PROXY_IP:-}"
 
+# --- SSRF allowlist for the platform's own identity provider ---------------
+#
+# The application refuses to make server-side requests to URLs that resolve
+# to private addresses (core/network.py's reject_private_url), which is a
+# sound default and protects the OIDC discovery, token, JWKS and userinfo
+# calls from being pointed at internal services.
+#
+# On this platform that default blocks single sign-on outright. The dashboard
+# is reachable from an app container over the internal bridge, so the
+# dashboard hostname resolves INSIDE the container to a private address
+# (measured: 172.18.0.1, RFC1918) even though the very same name resolves to
+# a public address from anywhere else. The browser-facing half of the flow
+# therefore works perfectly, the redirect to the provider succeeds, the user
+# authenticates, and the callback then fails with "URL resolves to a
+# non-public address" at the server-side token exchange.
+#
+# The fix is upstream's own escape hatch, scoped as narrowly as it will go:
+# the exact hostname of the issuer the addon gave us, and nothing else. A
+# CIDR entry would work too and is deliberately not used, because allowing
+# the whole internal bridge network would let any redirect chain reach every
+# other app on the rig, which is the attack reject_private_url exists to
+# stop. Only the platform's own dashboard host is trusted, only when the
+# oidc addon is actually configured.
+#
+# The field is Annotated[list[str], NoDecode] with a comma-splitting
+# validator, so the value is a bare comma-separated string like
+# TRUSTED_PROXIES above, never a JSON array. Entries are lower-cased and
+# stripped to the host label, so passing the issuer's host is enough.
+if [[ -n "${CLOUDRON_OIDC_ISSUER:-}" ]]; then
+    # Strip scheme, then any port and path, leaving the bare host label.
+    oidc_host="${CLOUDRON_OIDC_ISSUER#*://}"
+    oidc_host="${oidc_host%%/*}"
+    oidc_host="${oidc_host%%:*}"
+    if [[ -n "$oidc_host" ]]; then
+        export SSRF_ALLOWED_HOSTS="$oidc_host"
+        log "allowing server-side OIDC calls to the platform identity provider host"
+    fi
+fi
+
 export DATA_DIR="$DATA/storage"
 export LOGS_DIR="$RUN_DIR/logs"
 export FRONTEND_DIR="$RUN_DIR/frontend"
