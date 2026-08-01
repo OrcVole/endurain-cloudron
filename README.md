@@ -111,6 +111,33 @@ https://endurain.example.com/api/v1/activities/create/upload
 with the key in an `X-API-Key` header. See [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) for
 device-specific notes.
 
+## Known issues
+
+Two faults in the application itself, found while packaging and verified on a real installation, are
+worth knowing about before you rely on this for anything important. Both are reported upstream with
+evidence in [`docs/FOR-UPSTREAM.md`](docs/FOR-UPSTREAM.md); neither is caused by the packaging, and
+neither can be fixed from outside the application.
+
+**Uploading several activities at once can wedge the instance.** Concurrent uploads can leave database
+connections stranded in an open transaction, after which every request that needs the database waits
+indefinitely: no login, no upload, no page that reads anything. The application does not recover on
+its own. Restarting it clears the condition immediately and loses nothing.
+
+This package mitigates the operational half of that. Its health check reads the database rather than
+returning a static response, so an instance in this state is detected and restarted automatically by
+the platform instead of sitting there looking healthy (see
+[ADR 0004](docs/decisions/0004-health-check-touches-the-database.md)). The underlying leak still needs
+an upstream fix. If you are importing a backlog, upload a few at a time rather than in parallel.
+
+**Two activities sharing a start time break later uploads at that timestamp.** The duplicate check
+assumes at most one activity per start time and raises an error when it finds two, which the upload
+path itself can produce. Once that has happened, any further upload with that same start time fails
+with a server error until one of the duplicates is deleted.
+
+**The API documentation is public.** `/docs` and `/openapi.json` are served without authentication, as
+they are upstream by default. No data is exposed, but every installation publishes its complete API
+surface. There is no supported way to turn that off from the packaging layer.
+
 ## Backups
 
 Backups are entirely platform-native; the package adds no `backupCommand` and no `persistentDirs`.

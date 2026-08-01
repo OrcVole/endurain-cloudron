@@ -1,0 +1,56 @@
+{
+  "stable": true,
+  "versions": {
+    "0.1.1": {
+      "manifest": {
+        "id": "io.github.orcvole.endurain",
+        "title": "Endurain",
+        "author": "OrcVole",
+        "tagline": "Self-hosted fitness tracking for endurance sports",
+        "description": "Endurain is a self-hosted fitness tracking platform for endurance sports: running,\ncycling, hiking, swimming, gym work and more. Upload activities as FIT, GPX or TCX\nfiles, sync automatically from Strava and Garmin Connect, follow other users, track\nbody composition and health data, and keep every GPS track and heart-rate stream on\nyour own server.\n\nThis package runs Endurain on Cloudron with:\n\n- PostgreSQL, Redis and outgoing email provided by Cloudron addons, so backups and\n  updates are handled by the platform.\n- Optional Cloudron single sign-on through Endurain's native OpenID Connect support.\n  Local accounts keep working either way.\n- The upstream seeded `admin` account is protected on first run: this package replaces\n  the well-known default password with a generated one before the app ever serves a\n  request (see the post-install message).\n- Long-lived API keys (an Endurain feature since 0.18.0) let devices and apps such as\n  Gadgetbridge, OpenTracks or FitoTrack upload activities directly to your instance.\n\nEndurain is developed by the Endurain project (https://endurain.com), licensed\nAGPL-3.0-or-later. This is an unofficial community package; \"Endurain\" is a registered\ntrademark of its author, used here nominatively for a free, non-commercial community\npackage in line with the project's trademark policy.\n",
+        "changelog": "[0.1.1]\n* Bake the packaging revision into the image and log it at boot, so a running container identifies its own build\n* Copy the built frontend into the runtime tree instead of symlinking it, which the application's static file server refused to serve\n* Enable single sign-on in server settings when the Cloudron identity provider is first provisioned, so the login page offers it\n* Allow server-side OpenID Connect calls to the platform's own identity provider, which the application's SSRF guard blocked because the dashboard resolves to a private address inside the container\n* Validate SECRET_KEY on every boot the way FERNET_KEY already was, and re-assert the modes of the files provisioning writes\n* Answer a stop signal during the boot sequence instead of waiting out the platform's grace period\n\n[0.1.0]\n* Initial community package of Endurain 0.19.0\n* PostgreSQL, Redis, sendmail and OIDC through Cloudron addons; single sign-on lands in Endurain's native OIDC login\n* First-run neutralisation of the upstream seeded admin account with a generated password stored in /app/data/.secrets\n* All user files under /app/data; the Fernet encryption key is seeded once and guarded across update and restore\n",
+        "icon": "file://logo.png",
+        "version": "0.1.1",
+        "upstreamVersion": "0.19.0",
+        "dockerImage": "ghcr.io/orcvole/endurain-cloudron@sha256:7ceeb119c800ecf3519b75939d79a2dec3b3ed5d47bfa13262233ebf5f5281d2",
+        "healthCheckPath": "/api/v1/public/server_settings",
+        "httpPort": 8080,
+        "addons": {
+          "localstorage": {},
+          "postgresql": {},
+          "redis": {},
+          "sendmail": {},
+          "oidc": {
+            "loginRedirectUri": "/api/v1/public/idp/callback/cloudron"
+          }
+        },
+        "optionalSso": true,
+        "memoryLimit": 1610612736,
+        "configurePath": "/",
+        "postInstallMessage": "## First steps\n\n1. Sign in with username `admin`. The initial password was generated during\n   installation and stored in `/app/data/.secrets/admin-initial-password`; open it\n   with the Cloudron File manager (Files, `.secrets`, `admin-initial-password`).\n2. Change that password immediately in Endurain under Settings, then delete the file.\n\n<sso>\nCloudron single sign-on is wired into Endurain's own OpenID Connect login: use the\n\"Cloudron\" button on the login page. Accounts created through SSO start as standard\nusers; promote them from the admin account if needed. The `admin` account itself stays\nlocal.\n</sso>\n<nosso>\nThis installation has single sign-on turned off, so Endurain manages its own accounts:\nsign in with the `admin` account above and add users inside the app. Turning single\nsign-on on later, from the app's Single Sign-On settings in Cloudron, adds a \"Cloudron\"\nbutton to the login page and leaves existing local accounts working.\n</nosso>\n\n## Devices and apps\n\nEndurain accepts FIT, GPX and TCX uploads. For automatic upload from Gadgetbridge,\nOpenTracks, FitoTrack and similar, create an API key in Endurain (Settings, API keys)\nand point the app at:\n\n`$CLOUDRON-APP-ORIGIN/api/v1/activities/create/upload`\n\nwith the key in the `X-API-Key` header; that endpoint needs no other header. Clients\nthat sign in to the wider JSON API (rather than using an API key) must send\n`X-Client-Type: mobile` on their requests, including login.\n\n## Integrations\n\nStrava and Garmin Connect are linked per user under Settings. Strava requires each\nuser to register their own (free) Strava API application; the values are stored\nencrypted. Reverse geocoding uses the public Nominatim service by default and the map\ntile server is configurable by the admin in Server settings.\n",
+        "manifestVersion": 2,
+        "minBoxVersion": "9.1.0",
+        "packagerName": "OrcVole",
+        "packagerUrl": "https://github.com/OrcVole/endurain-cloudron",
+        "contactEmail": "Most+github@OrcadianVole.com",
+        "website": "https://endurain.com",
+        "documentationUrl": "https://docs.endurain.com",
+        "iconUrl": "https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/logo.png",
+        "tags": [
+          "fitness",
+          "tracking",
+          "health",
+          "gpx",
+          "strava",
+          "garmin"
+        ],
+        "mediaLinks": [
+          "https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/docs/screenshot.png"
+        ]
+      },
+      "creationDate": "2026-08-01T15:47:36.317Z",
+      "ts": 1785599256317,
+      "publishState": "published"
+    }
+  }
+}

@@ -9,7 +9,7 @@
   "version": "0.1.1",
   "upstreamVersion": "0.19.0",
   "dockerImage": "ghcr.io/orcvole/endurain-cloudron@sha256:7ceeb119c800ecf3519b75939d79a2dec3b3ed5d47bfa13262233ebf5f5281d2",
-  "healthCheckPath": "/api/v1/about",
+  "healthCheckPath": "/api/v1/public/server_settings",
   "httpPort": 8080,
   "addons": {
     "localstorage": {},
