@@ -77,10 +77,15 @@ because the image is what the world actually pulls.
 | Third-party documentation examples are accounted for, not hidden | 9 shape hits in 5 site-packages files, counted and reported on every run |
 
 Those nine are vendor documentation: sample tokens in Apprise's plugin docstrings, Amazon's
-published `AKIAIOSFODNN7EXAMPLE`, a PEM header used as a parser constant, and a base64 font blob in
-Pillow that happens to contain the letters `AKIA` followed by sixteen upper-case characters. The
-shape scan is relaxed inside site-packages only; the identity and token scans still cover it in
-full, and the count is printed on every run so a suppression cannot pass unnoticed.
+published example access key ID, a PEM header used as a parser constant, and a base64 font blob in
+Pillow that happens to contain an access-key-shaped run of characters. The shape scan is relaxed
+inside site-packages only; the identity and token scans still cover it in full, and the count is
+printed on every run so a suppression cannot pass unnoticed.
+
+This paragraph is deliberately written without quoting any of those example values. An earlier
+draft named Amazon's literal example key, and the scanner duly flagged this file: documentation
+about a credential shape is still a credential shape to a pattern matcher. Describe the examples,
+do not reproduce them.
 
 ## Build-time gates
 

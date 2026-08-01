@@ -111,7 +111,15 @@ echo "=== IMAGE scan: ${IMAGE:-<none>} ==="
 if   [[ -z "$IMAGE" ]]; then echo "  (no image given; pass one as \$1 or set SCAN_IMAGE)"
 elif [[ -z "$CRI"   ]]; then echo "  (no podman or docker found; skipped)"
 elif ! "$CRI" image exists "$IMAGE" 2>/dev/null && ! "$CRI" image inspect "$IMAGE" >/dev/null 2>&1; then
-  echo "  ($IMAGE not present locally; pull it to scan)"
+  # A requested image that cannot be scanned is a FAILURE, not a note. This
+  # used to print and carry on, which meant a run with a clean repo could
+  # report "secret-scan OK" having never looked at the image at all, while
+  # the whole reason this gate scans two surfaces is that the image is the
+  # artefact the world pulls. It became the DEFAULT path the moment the
+  # manifest pinned dockerImage by digest, because a digest reference is not
+  # the name the image is stored under locally: pass the tag explicitly, or
+  # pull the digest first.
+  emit image "$IMAGE could not be scanned: not present locally. Pull it, or pass the tag as \$1"
 else
   # grep INSIDE the image; patterns arrive on stdin. node_modules and .git pruned (upstream noise).
   img() {  # $1=E|F  $2=pattern file  $3..=dirs
