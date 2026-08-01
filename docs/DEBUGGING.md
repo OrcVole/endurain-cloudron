@@ -50,6 +50,9 @@ them, and driven through the public origin with real credentials rather than aga
 | G. Device pipeline, API key only | A minted key with `activities:upload` scope uploaded a **TCX** file with no browser session: 201, parsed to 50 m over 20.0 s, stored byte-identical. Different parser from flow A, so both file-format paths are proven |
 | H. Background scheduler | Thumbnails were generated for both activities without any user action, which exercises the in-process scheduler and the image pipeline |
 
+| I. Delete | `DELETE /activities/{id}/delete` 200; the activity leaves the list, and **both** its stored file and its generated thumbnail are removed from disk. Deleting does not orphan artefacts under `/app/data` |
+| J. Server-side tile fetch and reverse geocoding | An activity over central Edinburgh produced a 620 kB thumbnail with full OpenStreetMap detail, and the card reports "City of Edinburgh, United Kingdom". Both are outbound calls made by the application itself |
+
 ### Addon and service coverage
 
 | Component | Exercised by |
@@ -89,6 +92,15 @@ exists; the upload is `POST /profile/image`. And because the SPA's catch-all ans
 path with `index.html` and a 200, a mistyped API path looks like a success. Read `/openapi.json`,
 which this application serves and which is authoritative, rather than guessing paths. Doing that from
 the start would have saved three wrong turns in this gate alone.
+
+**A near-miss worth recording, because it nearly became a false finding.** The first activity
+thumbnails rendered as a route drawn on flat pale blue with no map under it, which reads exactly like
+a failed server-side tile fetch, and this package rewrites a Content-Security-Policy, so there was a
+plausible culprit to hand. The thumbnails were correct. The test fixture is a track in the North Sea,
+and open water is what OpenStreetMap looks like there. Re-running with a route through central
+Edinburgh produced a 620 kB thumbnail full of streets. The lesson is cheap to state and was nearly
+expensive: before blaming the package for a blank map, check whether the coordinates are somewhere
+that looks like anything. Test fixtures placed in plausible-sounding empty ocean make poor evidence.
 
 ### Not exercised, and why
 
