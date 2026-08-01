@@ -55,6 +55,51 @@ would close the window entirely, and is a small change against code that already
 project. Having the regeneration job verify an existing thumbnail rather than only test for its
 presence would additionally let an instance heal a file damaged some other way.
 
+## Concurrent activity uploads leave connections idle in transaction, and the application never recovers
+
+This is the most serious thing found while packaging, and it is reproducible with nothing more exotic
+than a user importing a backlog of activities.
+
+Forty-eight uploads of a 2000-point GPX file, six at a time through
+`POST /api/v1/activities/create/upload`, left the application permanently unable to serve any request
+that needs a database session. Inspecting the database during the failure:
+
+```
+connections to app db: 46
+  active               1
+  idle                 3
+  idle in transaction  42
+waiting                45
+```
+
+Forty-two sessions sat in `idle in transaction`, so every later request waited on a connection that
+was never going to be returned. `max_connections` was 500, so this is not connection exhaustion at
+the server: it is transactions opened and neither committed nor rolled back on the upload path under
+concurrency. None of the failing uploads appears in the application log at all, which suggests they
+were lost before the request handler logged them.
+
+The application does not recover on its own. Restarting it clears the state completely and
+immediately (back to one active and two idle connections), which points at the process holding the
+sessions rather than anything persistent.
+
+What makes this severe rather than merely annoying is the second half. **`GET /api/v1/about`
+continues to return 200 throughout**, in about a second, because it does not touch the database. Any
+orchestrator using it as a health check sees a perfectly healthy application. The platform this
+package targets reported the app as `running` for as long as the wedge lasted, and would never have
+restarted it. A user's instance can therefore be completely dead and monitored as healthy
+indefinitely.
+
+Two suggestions, offered separately because they are independent:
+
+1. The upload path should ensure its transaction is closed on every exit, including error paths, so
+   that concurrency cannot leak sessions. A pool timeout would also convert a permanent hang into a
+   visible error.
+2. A health endpoint that deliberately touches no dependency is a reasonable thing to offer, but it
+   would help operators enormously to also have one that checks the database, or for the documented
+   health endpoint to do so. This package has switched its own health check to
+   `/api/v1/public/server_settings` for exactly this reason: it is public, cheap, and reads the
+   database, so a wedge like the above is detected and the platform restarts the app automatically.
+
 ## A stated libc and Python floor
 
 This package builds Endurain from source rather than from the published container image, so it does
