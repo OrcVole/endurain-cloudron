@@ -34,6 +34,47 @@ restart with `AggregateError [ETIMEDOUT]` against the rig's API. The app was hea
 direct HTTPS request returned 200 in the same window), so this is the CLI's own connection, not the
 application. Retry it rather than treating it as evidence of anything.
 
+## Gate 1: auth and SSO. OPEN, pending the operator's browser sign-in
+
+Everything that can be established without a human is below. The gate reference is explicit that a
+real sign-in by a real user in a real browser is required and that the gate may not be closed on
+command-line evidence alone, so it stays open.
+
+Declared architecture, written down before testing: the `oidc` addon feeding the application's own
+native OpenID Connect login, no `proxyAuth` anywhere, `optionalSso: true`, predicted callback
+`/api/v1/public/idp/callback/cloudron`.
+
+| Invariant | Proof |
+| --- | --- |
+| Public paths stay open with SSO active | `/api/v1/about`, `/` and `/env.js` all return 200 with no session |
+| Protected paths are protected | `/api/v1/profile` and `/api/v1/profile/api_keys` both return 401 with no session |
+| The provisioned provider is visible to the login page | `GET /api/v1/public/idp` returns 200 and one provider: id 1, name `Cloudron`, slug `cloudron` |
+| SSO initiation reaches the platform's own IdP | `GET /api/v1/public/idp/login/cloudron` with a valid PKCE challenge returns 307 to the dashboard's `/openid/auth`, carrying `response_type=code`, `scope=openid profile email`, and a client id and state |
+| The callback path matches the prediction | The `redirect_uri` in that redirect is exactly the manifest's `loginRedirectUri` under the app origin, `…/api/v1/public/idp/callback/cloudron`. Observed, not inferred |
+| Local login still works beside SSO (`optionalSso`) | `POST /api/v1/auth/login` with the generated admin password returns 200 with a token set |
+| The seeded credential is dead on the rig too | the same endpoint with `admin`/`admin` returns 401 |
+| API keys can be minted | `POST /api/v1/profile/api_keys` returns 201 with step-up (current password) supplied |
+| **SSO does not fence the device pipeline** | `POST /api/v1/activities/create/upload` with only an `X-API-Key` header, no browser session, returns 201 and parses the activity |
+| The same path is refused without a credential | no header returns 401; an invalid key returns 401 |
+
+Two observations worth recording even though the gate is on course to pass.
+
+`GET /api/v1/public/idp/login/{slug}` returns **422 without PKCE parameters**, which is the
+application enforcing OAuth 2.1 on its own frontend rather than a fault. Anyone testing this route by
+hand will hit that 422 first and should not read it as a broken provider.
+
+The application demands PKCE from its own client but does **not forward** `code_challenge` to the
+upstream provider: the outbound authorize URL carries `state` and a client id and no challenge. That
+is coherent, because the package is a confidential client holding a client secret from the addon and
+the PKCE exchange protects the app's own token issuance step, but it is upstream's design choice
+rather than something this package configures, and it is the kind of detail worth knowing before
+someone reports it as a finding.
+
+A note on method, since it produced a false positive here: a guessed API path returned **200 with
+the SPA's HTML**, because the single-page application's catch-all answers any unmatched path. A 200
+from this app is therefore not evidence that a route exists. Check the content type, or read the
+router, before believing a status code.
+
 ## Local evidence, gathered before first install
 
 ## Local smoke suite
