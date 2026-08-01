@@ -4,8 +4,37 @@ Evidence tables for this package, newest first. Every row states an invariant an
 line, a hash, a count, an exit code. An inference is not a proof and does not belong in a proof
 cell.
 
-The gate ladder proper (gates 0 to 4, against a real install) has not run yet. What follows is the
-local evidence gathered before first install.
+## Gate 0: install, health, first run. PASS
+
+Run against a throwaway install on a community Cloudron (9.x), from the published image pinned by
+digest in the manifest. Every later gate cites this digest; if the image is rebuilt, the ladder
+restarts here.
+
+| Invariant | Proof |
+| --- | --- |
+| Test what you ship | The registry digest of the pushed tag and the `RepoDigests` entry of the image the rig actually pulled are the same value, `sha256:c37b8939…99b7f`. The install log names that digest rather than a tag |
+| Install completes | `cloudron install` ran through subdomain registration, image download, addon setup, reverse proxy and the health check without intervention |
+| Health, from outside | `GET /api/v1/about` over the public origin returns 200 with the expected version JSON |
+| Application surface | `GET /` returns the SPA (200, `<title>Endurain</title>`) and `GET /env.js` returns 200, so the runtime frontend config the package builds at boot is being served |
+| Init and privileges | PID 1 is `tini`; the application process runs as `cloudron` |
+| No restart loop | `RestartCount` 0 on the rig, and the log contains exactly two `starting uvicorn` lines for the two deliberate boots (install, then the restart below) |
+| Logs clean | No EACCES, EROFS, traceback or missing-variable complaints from the app. The single pattern match in the combined log is the **redis addon's** own `Failed to write PID file: Permission denied`, immediately followed by `Ready to accept connections`: it belongs to the addon container, not this package |
+| Addons wired | SMTP resolved from the sendmail addon at boot; the OIDC provider record was created from the addon's environment; Postgres and Redis both in use with no connection retries |
+| Secret modes | `secret-key`, `fernet-key`, `admin-initial-password` and `.admin-provisioned` are all `600 cloudron:cloudron` |
+| Secret idempotency across restart | sha256 of `secret-key` (`5da8188e…`) and `fernet-key` (`b0164f81…`) identical before and after `cloudron restart`; the second boot logs `existing secret found` for both, and `generating new secret` appears only on the first |
+| First-run work runs exactly once | `neutralised the seeded 'admin' account` appears once across both boots. The second boot re-checked the credential, found the seeded password no longer works, and correctly did nothing |
+| OIDC sync is idempotent | First boot `created the 'cloudron' identity provider`; second boot `refreshed the 'cloudron' identity provider's connection details and credentials from the current environment`. Addon credentials can rotate, so refresh-every-boot is the intended behaviour rather than a no-op |
+
+Note on the restart check: it exercises the reworked provisioning guard on a real install. The guard
+now asks the database whether the seeded credential still works rather than trusting its own marker
+file, so a second boot doing nothing is a positive result rather than an absence of one.
+
+One operational note for anyone repeating this: `cloudron exec` failed once immediately after the
+restart with `AggregateError [ETIMEDOUT]` against the rig's API. The app was healthy throughout (a
+direct HTTPS request returned 200 in the same window), so this is the CLI's own connection, not the
+application. Retry it rather than treating it as evidence of anything.
+
+## Local evidence, gathered before first install
 
 ## Local smoke suite
 
