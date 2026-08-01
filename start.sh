@@ -56,6 +56,13 @@ fail() {
     exit 1
 }
 
+# Say which build this is, first thing, so a log excerpt from a rig
+# identifies its own packaging revision without anyone having to correlate
+# image digests by hand.
+if [[ -r "$CODE/build-info" ]]; then
+    log "build: $(tr '\n' ' ' < "$CODE/build-info")"
+fi
+
 # --- writable directories ------------------------------------------------
 #
 # core/config.py's check_required_dirs(), called from create_app() on
