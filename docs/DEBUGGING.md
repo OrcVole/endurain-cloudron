@@ -34,6 +34,87 @@ restart with `AggregateError [ETIMEDOUT]` against the rig's API. The app was hea
 direct HTTPS request returned 200 in the same window), so this is the CLI's own connection, not the
 application. Retry it rather than treating it as evidence of anything.
 
+## Gate 4: memory. PASS at `memoryLimit` 1.5 GiB
+
+The application's primary store is the platform's PostgreSQL addon, in its own container, and nothing
+inside this cgroup is memory-mapped. `memory.peak` is therefore the counter the verdict is read
+against, and the 80 per cent rule applies as written. The page cache in this cgroup stayed between 11
+and 60 MiB throughout, which confirms it is not expanding to fill the limit the way a memory-mapped
+store's would.
+
+**Measured against the shipped limit, not the installed one.** The test install was created with 2 GiB
+while the manifest ships 1.5 GiB, so the loaded run below was taken with the cgroup's `memory.max`
+set to the manifest's exact value, and restored afterwards. Sizing a package by measuring a limit it
+does not ship is how a verdict ends up describing something nobody installs.
+
+| Invariant | Idle | Loaded (worst case, at the shipped 1.5 GiB) |
+| --- | --- | --- |
+| `memory.current` | 202 MiB | 364 MiB |
+| `memory.peak` | 266 MiB | **384 MiB**, 25 per cent of the limit |
+| `memory.stat anon` | 189 MiB | 279 MiB |
+| page cache (`file`) | 11 MiB | 60 MiB |
+| `memory.swap.current` | 0 | 0 |
+| `oom_kill` | 0 | **0** |
+| Application process RSS | 241 MB | 297 MB |
+| Health after the run | green | green, including the database-backed path in 1.2 s |
+
+### The load recipe, so it can be repeated
+
+Two phases, the second deliberately overlapping the first, because the peak of this application is
+concurrent ingest rather than any single operation:
+
+1. **Sequential ingest:** 30 activities of 1500 track points each, uploaded one at a time through the
+   API-key path. All returned 201. This barely moved the needle: peak rose from 266 to 267 MiB.
+2. **Concurrent ingest:** 18 activities of 1500 points, three at a time. Peak 298 MiB.
+3. **Worst case:** a bulk import of 20 activities of **3000** points each, triggered and left to run
+   in the background, **while** 18 more concurrent uploads were driven against the same instance.
+   Peak 384 MiB.
+
+The library finished at 141 activities, up from 1, so the load demonstrably landed rather than
+silently failing, which is the check that stops a low peak being mistaken for a good result.
+
+### Verdict
+
+All three checks hold:
+
+- `oom_kill` was zero for the entire run, the application stayed healthy throughout, and the load is
+  verifiable in the data rather than only in the status codes.
+- The loaded high-water mark is **384 MiB, 25 per cent of the 1.5 GiB limit**, comfortably inside the
+  80 per cent bound.
+- The worst-case bound clears with real margin. The observed peak already includes the heaviest
+  combination this application offers. Adding room for a pathologically large single activity, a
+  multi-hour recording at ten to twenty times the size of these fixtures, and a busier multi-user
+  instance on top, puts a defensible worst case near 700 to 800 MiB. That leaves roughly 750 MiB of
+  headroom against the shipped limit.
+
+`memoryLimit` therefore stays at 1610612736 (1.5 GiB). It is not changed as a result of this gate,
+which is worth stating explicitly: the provisional value was set by reasoning before any measurement,
+and the measurement agreed with it rather than the value being retrofitted to the measurement.
+
+### Host conditions, recorded because they qualify the numbers
+
+The first attempt at this gate was **abandoned rather than recorded**. The rig was running at a load
+average of 42 across 12 cores, with an unrelated application's bundled analytical database consuming
+6 days 12 hours of CPU time, and uploads could not complete. Numbers taken then would have been
+unrepresentative in an unknowable direction, and a sizing verdict is exactly the kind of figure later
+readers trust without re-reading its caveats.
+
+The run recorded above was taken after that was resolved, at a load average between 12 and 16 with
+roughly a quarter of the host's CPU idle and 30 GiB of its memory free. Still a shared host, so it is
+stated rather than glossed. CPU contention lengthens each request and therefore *increases*
+concurrency overlap, which biases a memory reading upward rather than down: the figures above are if
+anything conservative.
+
+### An operational note for anyone repeating this
+
+`cloudron exec` becomes unreliable while the box is busy, failing with `AggregateError [ETIMEDOUT]`
+or simply hanging past a two minute timeout. Every sampling call here has its own timeout and is
+retried, and one measurement cycle was discarded for it. That is the documented behaviour rather than
+a fault, but it has a sharp edge worth naming: a hung `exec` that returns an empty string turns into
+a *silently wrong* reading rather than an obvious error. One login attempt in this run failed with a
+422 for exactly that reason, the password having been read as empty, and it would have been easy to
+misread as an authentication problem with the application.
+
 ## Gate 3: update and restore. PASS
 
 Both legs run for real against the platform: an actual `cloudron update` between two built package
