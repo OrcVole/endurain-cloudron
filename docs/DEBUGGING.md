@@ -34,6 +34,73 @@ restart with `AggregateError [ETIMEDOUT]` against the rig's API. The app was hea
 direct HTTPS request returned 200 in the same window), so this is the CLI's own connection, not the
 application. Retry it rather than treating it as evidence of anything.
 
+## Gate 2: functional flows. PASS
+
+Flows enumerated before testing, chosen so that every declared addon is exercised by at least one of
+them, and driven through the public origin with real credentials rather than against internals.
+
+| Flow | Proof |
+| --- | --- |
+| A. Activity upload, browser session | `POST /activities/create/upload` 201; parsed to 218 m over 15.0 s with the track's own name; visible in the user's activity list; `GET /activities_streams/activity_id/1/all` returns **6 stream series of 4 waypoints each**; the stored file's sha256 is **identical** to the uploaded fixture |
+| B. Health weight entry | `POST /health/weight` 201, then `GET /health/weight` returns the row with the value as sent. This is the surface a future weight bridge would target |
+| C. Gear | `POST /gears` 201, then `GET /gears` lists it back with the nickname as sent |
+| D. Profile image | `POST /profile/image` 201; `photo_path` on the profile changes from null to the stored path; the stored file's sha256 is **identical** to the uploaded PNG |
+| E. Rate limiting (redis addon) | 14 requests to a `SENSITIVE`-limited route returned **ten 307s then four 429s**, matching the documented ten per minute exactly |
+| F. Mail (sendmail addon) | The addon's SMTP host answered `EHLO` with 250, advertised `AUTH`, and the addon supplied a username; the conversation completed and closed cleanly |
+| G. Device pipeline, API key only | A minted key with `activities:upload` scope uploaded a **TCX** file with no browser session: 201, parsed to 50 m over 20.0 s, stored byte-identical. Different parser from flow A, so both file-format paths are proven |
+| H. Background scheduler | Thumbnails were generated for both activities without any user action, which exercises the in-process scheduler and the image pipeline |
+
+### Addon and service coverage
+
+| Component | Exercised by |
+| --- | --- |
+| postgresql | Every flow; activities, users, gear, weight and settings all round-trip |
+| redis | Flow E, proven at the storage layer rather than by behaviour alone |
+| sendmail | Flow F |
+| localstorage | Flows A, D and G, all three verified byte-for-byte under `/app/data` |
+| oidc | Gate 1 |
+| uvicorn process and in-process scheduler | Flows A to G, and H respectively |
+
+### What the flows taught
+
+**Rate-limit state is genuinely in the addon, and it is keyed by the real client address.** The Redis
+key created by flow E is `LIMITS:LIMITER/<client-ip>//api/v1/public/idp/login/cloudron/10/1/minute`.
+Two things follow. The limiter is not silently falling back to process-local memory, which is the
+failure the application warns about at startup and which no amount of observing 429s would
+distinguish. And the address in the key is the **external client address**, not the platform's
+internal proxy address, which proves the forwarded-header handling and `TRUSTED_PROXIES` are correct
+end to end. A package that got that wrong would rate-limit every user on the rig as though they were
+one client.
+
+**Mail was verified by conversation, not by delivery, and deliberately so.** The seeded admin account
+carries an address at upstream's own domain, so triggering a password reset would have sent mail to a
+third party. Reachability, `EHLO`, advertised `AUTH` and the addon's credentials together prove the
+wiring this package is responsible for. An end-to-end delivery test needs an address the operator
+owns and is left as an explicit, named gap rather than quietly skipped.
+
+**`/docs` and `/openapi.json` are served publicly, without authentication.** Not a data exposure, and
+it is upstream's default rather than something this package configures, but it does publish the
+complete API surface of every installation. Worth knowing, and worth stating in the operator
+documentation rather than being discovered.
+
+**Two route-shaped traps for anyone testing this API.** `PUT /profile/photo` is named like an upload
+and is actually *Delete Profile Photo*, taking no body and returning 204 whether or not a photo
+exists; the upload is `POST /profile/image`. And because the SPA's catch-all answers any unmatched
+path with `index.html` and a 200, a mistyped API path looks like a success. Read `/openapi.json`,
+which this application serves and which is authoritative, rather than guessing paths. Doing that from
+the start would have saved three wrong turns in this gate alone.
+
+### Not exercised, and why
+
+Hairpin behaviour is not applicable here: nothing in the backend calls the application's own public
+origin, so no `/etc/hosts` fallback was needed or added. `ENDURAIN_HOST` is used for the JWT issuer
+and audience and for the frontend's API base, not for server-side self-calls. Recorded because
+"fallback unused" is evidence that the packaging can stay simpler.
+
+FIT files are not covered. GPX and TCX are, through two different parsers, but no valid FIT fixture
+was available to synthesise by hand. The dependency is present and imports at build time; the parse
+path itself is unproven and is named here rather than implied.
+
 ## Gate 1: auth and SSO. PASS
 
 Closed after a real Cloudron user signed in through a real browser and landed inside the
