@@ -111,6 +111,18 @@ this entry is inferred from documentation alone.
   `skopeo inspect docker://…` rather than from `podman inspect`. This is a known trap rather than a
   discovery, but it reproduced exactly, and a pin taken from the local value would have named a
   manifest the registry does not serve.
+- **Pinning `dockerImage` by digest silently disabled the image half of the secret scan.** The
+  scanner defaults its target to the manifest's `dockerImage`, and a digest reference is not the name
+  the image is stored under locally, so the scan printed "not present locally; pull it to scan" and
+  carried on to report success. A run with a clean file set would therefore have announced
+  "secret-scan OK" having never looked at the image at all, which is the surface that actually
+  matters, because it is what the world pulls. A requested image that cannot be scanned is now a
+  failure rather than a note. Worth generalising: when a gate's target becomes unreachable, the
+  honest default is to fail, because a gate that skips its own subject and still says OK is worse
+  than no gate.
+- **Documentation about a credential shape is still a credential shape.** The note above about vendor
+  example keys originally quoted Amazon's literal published example, and the scanner flagged this
+  package's own documentation on the next run. Describe such values, do not reproduce them.
 - **A registry visibility check can quietly authenticate itself.** `skopeo inspect` reads the
   container auth file by default, so probing "can anyone pull this yet?" from a machine that has just
   logged in to push reports success regardless of the package's actual visibility. Use `--no-creds`,
