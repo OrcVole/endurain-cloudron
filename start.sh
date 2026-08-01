@@ -227,34 +227,37 @@ export BACKEND_DIR="$UP"
 # environment at all, regardless of value ("Endurain will not start until
 # they are removed"), so neither is exported here.
 
-# --- frontend farm: every boot ---------------------------------------------
+# --- frontend runtime tree: every boot -------------------------------------
 #
 # /app/code/frontend-dist is part of the read-only image and cannot be
-# edited in place, so env.js and the CSP-rewritten index.html are real,
-# writable files under $RUN_DIR/frontend, while every other built asset is
-# a cheap symlink back into the read-only tree.
+# edited in place, but two of its files must be rewritten at boot: env.js
+# carries the runtime origin, and index.html carries a CSP that has to name
+# that origin. So the whole built tree is COPIED into $RUN_DIR/frontend and
+# the two files are rewritten in the copy.
+#
+# A copy, not a symlink farm. Symlinking the untouched assets back into the
+# read-only tree looks obviously better, costs no memory, and does not work:
+# Starlette serves this directory with StaticFiles, whose lookup_path()
+# calls os.path.realpath() on the resolved file and refuses to serve
+# anything landing outside the served directory, unless it was constructed
+# with follow_symlink=True, which upstream does not do and this package
+# cannot change from outside. Every symlinked asset therefore returned 404
+# while index.html and env.js, the two REAL files, served perfectly: the API
+# answered every request, the page loaded, the title was right, and the
+# application was a blank white screen with no styling or JavaScript at all.
+# Measured on the rig, 2026-08-01, on an install whose earlier gate evidence
+# had recorded "SPA served, 200" without ever fetching a single asset.
+#
+# The tree is about 10 MB and $RUN_DIR is tmpfs, so the copy is charged to
+# the app's memory cgroup. That is the real cost of this approach and it is
+# accounted for in the memory sizing.
 log "rebuilding the frontend runtime tree at $RUN_DIR/frontend"
 find "$RUN_DIR/frontend" -mindepth 1 -delete
-shopt -s nullglob dotglob
-for entry in "$CODE/frontend-dist"/*; do
-    name="$(basename "$entry")"
-    case "$name" in
-        index.html)
-            cp "$entry" "$RUN_DIR/frontend/index.html"
-            ;;
-        env.js)
-            # The built dist ships a placeholder env.js (frontend/public/
-            # env.js). Symlinking it would make the write below go through
-            # the symlink into the read-only image and fail with EROFS, so
-            # it is skipped here and written fresh as a real file instead.
-            ;;
-        *)
-            ln -s "$entry" "$RUN_DIR/frontend/$name"
-            ;;
-    esac
-done
-shopt -u nullglob dotglob
+cp -a "$CODE/frontend-dist/." "$RUN_DIR/frontend/"
 
+# Overwrite the placeholder env.js the build ships (frontend/public/env.js)
+# with the real runtime origin. This is a plain write into the copy; there
+# is no symlink left to write through into the read-only image.
 echo "window.env = { ENDURAIN_HOST: \"$ENDURAIN_HOST\" };" > "$RUN_DIR/frontend/env.js"
 
 # Faithful port of upstream's docker/start.sh CSP connect-src rewrite onto
