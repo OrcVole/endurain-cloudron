@@ -213,6 +213,37 @@ else
     fail "PID 1 is '${pid1_comm:-<unknown>}', expected tini"
 fi
 
+# --- the SPA must actually load, not merely return 200 ----------------------
+# A 200 on / proves the server answered, not that the application works. The
+# first version of this package symlinked the built assets back into the
+# read-only image, and Starlette's StaticFiles refuses to serve a file whose
+# realpath leaves the served directory, so every asset 404'd: / returned 200
+# with the correct title, every API assertion passed, and a browser showed a
+# blank white page. This fetches what index.html actually references.
+index_file="$SCRATCH_DIR/index.html"
+if curl -sS --fail -o "$index_file" "$ORIGIN/" 2>/dev/null; then
+    # Every local src/href the page depends on, deduplicated.
+    mapfile -t spa_assets < <(grep -oE '(src|href)="/[^"]+"' "$index_file" \
+        | sed -E 's/^(src|href)="//; s/"$//' | sort -u)
+    if [[ ${#spa_assets[@]} -eq 0 ]]; then
+        fail "index.html referenced no local assets, which cannot be right"
+    else
+        asset_failures=0
+        for asset in "${spa_assets[@]}"; do
+            code="$(curl -sS -o /dev/null -w '%{http_code}' "$ORIGIN$asset")"
+            if [[ ! "$code" =~ ^2[0-9][0-9]$ ]]; then
+                fail "SPA asset $asset returned $code"
+                asset_failures=$((asset_failures + 1))
+            fi
+        done
+        if [[ "$asset_failures" -eq 0 ]]; then
+            pass "all ${#spa_assets[@]} assets referenced by index.html load (the SPA can actually render)"
+        fi
+    fi
+else
+    fail "could not fetch / to check the SPA's assets"
+fi
+
 # --- process identity -------------------------------------------------------
 python_user="$(podman exec "$APP_CONTAINER" ps -eo user,comm --no-headers 2>/dev/null \
     | awk 'tolower($2) ~ /python/ {print $1; exit}')"
