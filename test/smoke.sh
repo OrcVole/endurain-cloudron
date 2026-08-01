@@ -22,6 +22,7 @@ APP_CONTAINER=endurain-smoke-app
 PG_CONTAINER=endurain-smoke-pg
 REDIS_CONTAINER=endurain-smoke-redis
 BOOTSTOP_CONTAINER=endurain-smoke-bootstop
+SSO_CONTAINER=endurain-smoke-sso
 HOST_PORT=18080
 ORIGIN="http://127.0.0.1:${HOST_PORT}"
 
@@ -57,7 +58,7 @@ die() {
 
 cleanup() {
     log "cleaning up"
-    podman rm -f "$APP_CONTAINER" "$BOOTSTOP_CONTAINER" "$PG_CONTAINER" "$REDIS_CONTAINER" >/dev/null 2>&1 || true
+    podman rm -f "$APP_CONTAINER" "$BOOTSTOP_CONTAINER" "$SSO_CONTAINER" "$PG_CONTAINER" "$REDIS_CONTAINER" >/dev/null 2>&1 || true
     podman volume rm -f "$VOLUME" >/dev/null 2>&1 || true
     podman network rm -f "$NET" >/dev/null 2>&1 || true
     rm -rf "$SCRATCH_DIR"
@@ -422,6 +423,86 @@ if [[ -n "$fernet_key_value" ]] && printf '%s\n' "$full_logs" | grep -qF -- "$fe
 fi
 if [[ "$secret_leaked" -eq 0 ]]; then
     pass "no secret value (admin password, secret-key, fernet-key) appears in container logs"
+fi
+
+# --- with the oidc addon present, SSO must actually be OFFERED --------------
+#
+# The main container above runs with no OIDC variables on purpose, to prove
+# the optionalSso path. That means it cannot see this defect at all: creating
+# the identity-provider record is not enough to make SSO usable, because the
+# login page only draws its SSO button when the server-settings row has
+# sso_enabled set, and that column defaults to false. The provider existed,
+# the provider list endpoint returned it, the whole OAuth redirect worked
+# when driven by hand, and a human saw a login form with no SSO button.
+#
+# So: boot a throwaway against a fresh database WITH addon-shaped OIDC
+# variables, and assert the observable outcome rather than the mechanism.
+# The values are fake; provisioning writes them to the database and does not
+# contact the issuer, so nothing here reaches the network.
+SSO_DB=endurain_sso
+SSO_PORT=18081
+
+log "checking that the oidc addon actually results in SSO being offered"
+if podman exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -c "CREATE DATABASE ${SSO_DB};" >/dev/null 2>&1; then
+    podman run -d --name "$SSO_CONTAINER" \
+        --network "$NET" \
+        --read-only --tmpfs /run --tmpfs /run/secrets --tmpfs /tmp --tmpfs /app/data \
+        -p "${SSO_PORT}:8080" \
+        -e CLOUDRON_POSTGRESQL_HOST="$PG_CONTAINER" \
+        -e CLOUDRON_POSTGRESQL_PORT=5432 \
+        -e CLOUDRON_POSTGRESQL_USERNAME="$PG_USER" \
+        -e CLOUDRON_POSTGRESQL_PASSWORD="$PG_PASSWORD" \
+        -e CLOUDRON_POSTGRESQL_DATABASE="$SSO_DB" \
+        -e CLOUDRON_REDIS_URL="redis://${REDIS_CONTAINER}:6379" \
+        -e CLOUDRON_APP_ORIGIN="http://127.0.0.1:${SSO_PORT}" \
+        -e CLOUDRON_PROXY_IP="$GATEWAY" \
+        -e CLOUDRON_OIDC_ISSUER="https://sso.example.com" \
+        -e CLOUDRON_OIDC_DISCOVERY_URL="https://sso.example.com/.well-known/openid-configuration" \
+        -e CLOUDRON_OIDC_AUTH_ENDPOINT="https://sso.example.com/openid/auth" \
+        -e CLOUDRON_OIDC_TOKEN_ENDPOINT="https://sso.example.com/openid/token" \
+        -e CLOUDRON_OIDC_PROFILE_ENDPOINT="https://sso.example.com/openid/me" \
+        -e CLOUDRON_OIDC_CLIENT_ID="smoke-client" \
+        -e CLOUDRON_OIDC_CLIENT_SECRET="smoke-secret" \
+        "$IMAGE" >/dev/null 2>&1
+
+    sso_origin="http://127.0.0.1:${SSO_PORT}"
+    if curl -sS --retry 40 --retry-delay 3 --retry-connrefused --retry-all-errors --fail \
+        -o "$SCRATCH_DIR/sso-about.json" "$sso_origin/api/v1/about" >/dev/null 2>&1; then
+
+        settings_file="$SCRATCH_DIR/sso-settings.json"
+        curl -sS -o "$settings_file" "$sso_origin/api/v1/public/server_settings" -H 'X-Client-Type: web' >/dev/null 2>&1
+        sso_enabled="$(json_field "$settings_file" sso_enabled)"
+        local_login="$(json_field "$settings_file" local_login_enabled)"
+
+        if [[ "$sso_enabled" == "True" || "$sso_enabled" == "true" ]]; then
+            pass "with the oidc addon present, server settings report sso_enabled (the login page will offer SSO)"
+        else
+            fail "oidc addon present but sso_enabled is '${sso_enabled:-<absent>}': the provider exists but no SSO button is drawn"
+        fi
+
+        # optionalSso cuts both ways: enabling SSO must not lock out the
+        # generated local admin account.
+        if [[ "$local_login" == "True" || "$local_login" == "true" ]]; then
+            pass "local login stays enabled alongside SSO"
+        else
+            fail "local_login_enabled is '${local_login:-<absent>}': enabling SSO disabled local accounts"
+        fi
+
+        idp_file="$SCRATCH_DIR/sso-idp.json"
+        curl -sS -o "$idp_file" "$sso_origin/api/v1/public/idp" -H 'X-Client-Type: web' >/dev/null 2>&1
+        if grep -q '"slug"[[:space:]]*:[[:space:]]*"cloudron"' "$idp_file" 2>/dev/null; then
+            pass "the cloudron identity provider is listed on the public provider endpoint"
+        else
+            fail "the cloudron provider is not listed: $(head -c 120 "$idp_file" 2>/dev/null)"
+        fi
+    else
+        fail "the oidc-enabled container never became healthy, so the SSO checks did not run"
+    fi
+
+    podman rm -f "$SSO_CONTAINER" >/dev/null 2>&1
+    podman exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -c "DROP DATABASE ${SSO_DB};" >/dev/null 2>&1
+else
+    fail "could not create the ${SSO_DB} database, so the SSO checks did not run"
 fi
 
 # --- a stop DURING the boot sequence must be answered, not waited out -------

@@ -40,12 +40,15 @@ from pathlib import Path
 
 # The app's own modules, importable because PYTHONPATH points at
 # backend/app (see start.sh's provisioning step).
+import sqlalchemy  # noqa: E402
+
 import auth.credentials.crud as auth_credentials_crud  # noqa: E402
 import auth.identity_providers.crud as idp_crud  # noqa: E402
 import auth.identity_providers.schema as idp_schema  # noqa: E402
 import auth.password_hasher as auth_password_hasher  # noqa: E402
 import core.database as core_database  # noqa: E402
 import users.users.crud as users_crud  # noqa: E402
+import server_settings.models as server_settings_models  # noqa: E402
 import users.users.schema as users_schema  # noqa: E402
 
 SECRETS_DIR = Path("/app/data/.secrets")
@@ -350,6 +353,36 @@ def _sync_cloudron_identity_provider() -> None:
                     db,
                 )
                 _log(f"created the '{CLOUDRON_IDP_SLUG}' identity provider")
+
+                # Creating the provider record is not enough to make it
+                # usable: the login page only offers an SSO button when the
+                # singleton server-settings row has sso_enabled set, and the
+                # column defaults to false. Without this the provider exists,
+                # /api/v1/public/idp lists it, the whole OAuth flow works
+                # when driven by hand, and a human sees a login form with no
+                # SSO button at all. Found on the rig, 2026-08-01.
+                #
+                # Enabled only here, in the branch that CREATES the record,
+                # so it happens on the boot where SSO first becomes
+                # available and never again. An operator who later turns SSO
+                # off in the admin UI stays turned off, which re-asserting it
+                # every boot would silently undo.
+                #
+                # Written as a direct column update rather than through
+                # edit_server_settings(), which re-encrypts
+                # tileserver_api_key on every call: round-tripping the
+                # settings object would double-encrypt a key an operator had
+                # already set, because the read schema carries the stored
+                # ciphertext rather than the plaintext. One boolean, no side
+                # effects. local_login_enabled is deliberately left alone, so
+                # the generated admin account keeps working alongside SSO.
+                settings_row = db.execute(
+                    sqlalchemy.select(server_settings_models.ServerSettings)
+                ).scalars().first()
+                if settings_row is not None and not settings_row.sso_enabled:
+                    settings_row.sso_enabled = True
+                    db.commit()
+                    _log("enabled SSO in server settings; the login page will offer the Cloudron button")
             else:
                 # Only the addon-sourced connection fields above are
                 # refreshed on an existing record. name/provider_type/
