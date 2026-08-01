@@ -5,9 +5,17 @@ Endurain has been straightforward to package, and everything below is offered as
 would help every deployment method, not only this one, from a project that is clearly already
 thinking about deployment and operations.
 
-**Status: to be completed at the end of this packaging round.** The points below are seeded now,
-while they are fresh, and will be gathered into whatever form is most useful to send upstream, an
-issue, a discussion post, or a pull request, once the round that produced them is finished.
+**Status: filed, 2026-08-01.**
+
+- The duplicate-start-time defect is Codeberg issue
+  [#858](https://codeberg.org/endurain-project/endurain/issues/858).
+- The transaction leak that can leave an instance permanently unable to serve requests was sent
+  **privately by email**, as the project's `SECURITY.md` asks, because any authenticated user can
+  use it to deny service to every user of an instance. It is described below for this package's own
+  record; please do not lift it into a public issue ahead of the maintainer.
+- The remaining points are packaging observations rather than defects, and were offered alongside
+  the packaging announcement rather than as issues, since the project asks that issues be opened one
+  thing at a time and its maintainer is a single person working in their spare time.
 
 ## The seeded admin / admin credential
 
@@ -20,11 +28,25 @@ the same time, rather than leaving each one to solve it separately, as this pack
 
 ## A documented health-check commitment
 
-`/api/v1/about` currently works well as an orchestrator health check: unauthenticated, static, and
-on the primary port, which is exactly what a platform health check needs. It would help to have
-that stated as a deliberate, documented commitment rather than left as an incidental property of an
-endpoint that happens to suit, so that packagers and orchestrator authors can rely on it without
-independently rediscovering that it is safe to poll.
+*Written early in the packaging work, and then substantially revised by what the round found. The
+original text recommended `/api/v1/about` as the natural health endpoint. It is kept in amended form
+rather than deleted, because the reasoning that made it look right is exactly the reasoning that
+makes this class of mistake common.*
+
+`/api/v1/about` looks like an ideal orchestrator health check: unauthenticated, static, cheap, on the
+primary port. Its problem is precisely that it is static. Because it touches no dependency, it cannot
+distinguish a working instance from one that is completely unable to serve a request, which is not
+hypothetical here: see the transaction-leak section below, where it returned 200 throughout an
+outage that made the application useless.
+
+Two things would help packagers and orchestrator authors:
+
+1. State plainly, in the deployment documentation, that `/api/v1/about` is a **process liveness**
+   check only and must not be relied on to detect a broken instance.
+2. Offer, or document, an endpoint that touches the database and is safe to poll. This package now
+   uses `/api/v1/public/server_settings`, which is public, cheap and reads one row, but it chose that
+   by reading the router rather than from any documented commitment, so a future refactor could
+   silently take it away.
 
 ## The X-Client-Type header and its 401
 
