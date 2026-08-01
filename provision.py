@@ -125,18 +125,31 @@ def _write_initial_password_file(password: str) -> None:
 def _neutralise_seeded_admin() -> None:
     """Part 1: generate a fresh password for the seeded admin account.
 
-    First run only, guarded by ``MARKER_PATH``. Any exception here is
-    treated as fatal on a first run: it is printed loudly (by exception
-    type only, following ``core.logger``'s own convention of never logging
-    a raw exception message, since those can embed bound SQL parameter
-    values) and the process exits non-zero so start.sh's ``set -e`` aborts
-    the boot rather than serving with ``admin`` / ``admin`` still live.
+    The question asked on every boot is the only one that settles the
+    matter: does the publicly known seeded password still open the seeded
+    account? If it does, it is replaced, whatever the marker file says and
+    whatever the account's access level claims.
+
+    The marker still exists, but its job is narrower than it looks. It
+    records that provisioning has run, so an ordinary boot that finds
+    nothing to do stays quiet; it is deliberately NOT trusted as proof that
+    the credential is safe. That distinction matters because the marker
+    lives on the data volume while the fact it would be vouching for lives
+    in the database, and those are separate persistence domains: a database
+    restored to a point before neutralisation, or an addon reprovisioned
+    behind an existing volume, would leave a stale marker asserting that
+    ``admin`` / ``admin`` had been dealt with when it had not. Asking the
+    database directly costs one query per boot and cannot go stale.
+
+    Any exception here is fatal: it is printed loudly (by exception type
+    only, following ``core.logger``'s own convention of never logging a raw
+    exception message, since those can embed bound SQL parameter values)
+    and the process exits non-zero so start.sh's ``set -e`` aborts the boot
+    rather than serving with ``admin`` / ``admin`` still live. That
+    includes a failure of the password check itself, which must never be
+    allowed to fail closed into "nothing to neutralise".
     """
-    if MARKER_PATH.exists():
-        # Marker present: this has already run. Skip silently, exactly as
-        # specified, so a routine restart does not add log noise for a
-        # step that has nothing left to do.
-        return
+    marker_present = MARKER_PATH.exists()
 
     try:
         with core_database.SessionLocal() as db:
@@ -155,13 +168,13 @@ def _neutralise_seeded_admin() -> None:
                 == users_schema.UserAccessType.ADMIN.value
             )
 
-            # Defence in depth against exactly the bug above. The decision
-            # that actually matters is not "does this account look like the
-            # seeded one" but "does the publicly known seeded password still
-            # open it", so ask that question directly: any account still
-            # holding the seeded credential gets neutralised whatever its
-            # access level says. A guard that answers the real question
-            # cannot fail silently the way an attribute comparison can.
+            # The actual trigger. Not "does this account look like the
+            # seeded one", which is a proxy and was already wrong once, but
+            # "does the seeded credential still work", which is the thing
+            # that would harm the operator if left true. Verified with the
+            # application's own hasher, so it stays correct if upstream
+            # changes its hashing scheme, and it reports False for an
+            # SSO-only account with no local credential row.
             seeded_password_works = False
             if admin_user is not None:
                 credential = auth_credentials_crud.get_credential(admin_user.id, db)
@@ -169,21 +182,54 @@ def _neutralise_seeded_admin() -> None:
                     seeded_password_works = auth_password_hasher.get_password_hasher(
                     ).verify_password(SEEDED_ADMIN_PASSWORD, credential.password_hash)
 
-            if not (is_admin or seeded_password_works):
-                # The operator has already renamed or deleted the seeded
-                # account (or changed its access level away from admin) and
-                # no account is left holding the seeded password. There is
-                # nothing to neutralise; record that and move on.
-                _log(
-                    f"no seeded '{SEEDED_ADMIN_USERNAME}' admin account found "
-                    "(renamed, deleted or demoted); nothing to neutralise"
-                )
-                _write_marker(MARKER_PATH)
+            if not seeded_password_works:
+                if not marker_present:
+                    # First run for this volume, and the seeded credential
+                    # is already gone. Either the operator got there first
+                    # or upstream stopped seeding it. Nothing to do, and
+                    # deliberately nothing clobbered: an admin account whose
+                    # password is already something else is the operator's,
+                    # and resetting it would lock them out of their own app.
+                    _log(
+                        f"the seeded '{SEEDED_ADMIN_USERNAME}' password is not in use"
+                        + (
+                            "; leaving the existing admin account untouched"
+                            if is_admin
+                            else " and no seeded admin account is present"
+                        )
+                        + "; nothing to neutralise"
+                    )
+                    _write_marker(MARKER_PATH)
                 return
+
+            if marker_present:
+                # The marker says this was handled, and the database
+                # disagrees. Say so plainly rather than fixing it quietly:
+                # the likely causes (a restore that reunited an old volume
+                # with a rolled-back database, or someone setting the
+                # password back to the default) are both things an operator
+                # should know happened.
+                _log(
+                    f"the seeded '{SEEDED_ADMIN_USERNAME}' password is live again despite an "
+                    "earlier neutralisation; replacing it and rewriting the password file"
+                )
 
             new_password = secrets.token_urlsafe(24)
             password_hasher = auth_password_hasher.get_password_hasher()
             password_hash = password_hasher.hash_password(new_password)
+
+            # Record the password for the operator BEFORE it becomes the
+            # account's real password. upsert_password_hash() commits on the
+            # spot, so writing the file afterwards would leave one failure
+            # mode that locks the operator out of their own installation: a
+            # committed password that no longer exists anywhere readable.
+            # In this order the two failure modes are both recoverable. If
+            # the file write fails, the boot aborts with the seeded
+            # credential still in place, which is bad but obvious and
+            # fixable. If the commit then fails, the file names a password
+            # that was never set, and the next boot finds the seeded
+            # credential still live, regenerates, and overwrites it.
+            _write_initial_password_file(new_password)
 
             # Same write path the application itself uses for a local
             # password change: matches column names and updated_at
@@ -191,7 +237,6 @@ def _neutralise_seeded_admin() -> None:
             # users_local_credentials row) exactly.
             auth_credentials_crud.upsert_password_hash(admin_user.id, password_hash, db)
 
-        _write_initial_password_file(new_password)
         _write_marker(MARKER_PATH)
         _log(
             f"neutralised the seeded '{SEEDED_ADMIN_USERNAME}' account with a generated "

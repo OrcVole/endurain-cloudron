@@ -57,8 +57,9 @@ Nothing is bundled; no `persistentDirs`, no `backupCommand`.
 - **Build from source at the tag, not from the upstream image** (ADR 0001): upstream's
   image is Alpine/musl with an ENTRYPOINT-only contract, and its registry moved twice
   in a year. Two-stage build, both stages on the pinned `cloudron/base`; uv-managed
-  CPython 3.13 venv from `uv.lock` (`uv sync --frozen`); frontend built with the
-  base's Node 24 (`npm ci && npm run build`).
+  CPython 3.13 venv from `uv.lock` (`uv sync --frozen`); frontend built with a pinned
+  Node 24 fetched in the builder stage (`npm ci && npm run build`), because the base
+  ships Node 22.
 - **Auth topology** (ADR 0002): no `proxyAuth` anywhere; the app has real auth.
   `oidc` addon feeds a provisioned identity-provider record (slug `cloudron`, so the
   callback is `/api/v1/public/idp/callback/cloudron`); `optionalSso: true`; the
@@ -91,6 +92,11 @@ Nothing is bundled; no `persistentDirs`, no `backupCommand`.
   from `https://codeberg.org/endurain-project/endurain.git`
 - uv `0.11.18` (project-pinned), tarball sha256
   `588f3e360f69ce02b6982aa99f2240e803933a6b7e176ac01617830adf955add`
+- Node `24.15.0`, builder stage only, from
+  `https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz`, tarball sha256
+  `472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6`. Not supplied by
+  `cloudron/base`, which ships Node 22.14.0: below upstream's declared floor, and with an
+  npm too old to read upstream's lockfile.
 
 ## Environment mapping (translated on every boot)
 

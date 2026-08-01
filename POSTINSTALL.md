@@ -11,6 +11,12 @@ Cloudron single sign-on is wired into Endurain's own OpenID Connect login: use t
 users; promote them from the admin account if needed. The `admin` account itself stays
 local.
 </sso>
+<nosso>
+This installation has single sign-on turned off, so Endurain manages its own accounts:
+sign in with the `admin` account above and add users inside the app. Turning single
+sign-on on later, from the app's Single Sign-On settings in Cloudron, adds a "Cloudron"
+button to the login page and leaves existing local accounts working.
+</nosso>
 
 ## Devices and apps
 
