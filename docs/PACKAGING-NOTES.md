@@ -104,6 +104,20 @@ this entry is inferred from documentation alone.
   build time here, verified rather than assumed: the import opens no database connection and starts
   no scheduler.
 
+- **The local image digest and the registry digest differed, again.** Immediately after a successful
+  push of a single-architecture image, the locally stored digest and the digest the registry reports
+  for the same tag were different values. Only the registry's answer means anything to the platform,
+  because it is what the platform resolves when it pulls, so the manifest pin was taken from
+  `skopeo inspect docker://…` rather than from `podman inspect`. This is a known trap rather than a
+  discovery, but it reproduced exactly, and a pin taken from the local value would have named a
+  manifest the registry does not serve.
+- **A registry visibility check can quietly authenticate itself.** `skopeo inspect` reads the
+  container auth file by default, so probing "can anyone pull this yet?" from a machine that has just
+  logged in to push reports success regardless of the package's actual visibility. Use `--no-creds`,
+  and confirm with a deliberately empty `--authfile` as a second opinion. The failure direction is the
+  dangerous one: it says the image is public when it is private, which is exactly the belief that
+  produces an install attempt that cannot pull.
+
 **Environment note for anyone smoke-testing locally with podman:**
 
 - **Podman on Fedora and RHEL will mount a read-only directory over `/run/secrets`.**
