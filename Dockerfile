@@ -169,6 +169,19 @@ FROM cloudron/base:5.0.0@sha256:04fd70dbd8ad6149c19de39e35718e024417c3e01dc9c663
 ARG ENDURAIN_VERSION=0.19.0
 ENV ENDURAIN_VERSION=${ENDURAIN_VERSION}
 
+# Package revision, baked in so a RUNNING container can say which build it
+# is. The manifest pins an image by digest and the platform reports its own
+# app version, but neither answers "which packaging revision is actually
+# serving right now" from inside the container, which is the question that
+# matters when triaging a rig you did not deploy an hour ago. Passed with
+# --build-arg PACKAGE_REVISION=<tag> at build time; the default is honest
+# about not having been told.
+ARG PACKAGE_REVISION=unspecified
+RUN mkdir -p /app/code \
+ && printf 'upstream=%s\npackage_revision=%s\n' "${ENDURAIN_VERSION}" "${PACKAGE_REVISION}" \
+      > /app/code/build-info \
+ && chmod 0644 /app/code/build-info
+
 # uv-managed interpreter and venv, at the same absolute paths they were
 # built at, so venv/bin/python's interpreter symlinks keep resolving.
 COPY --from=builder /app/code/python /app/code/python

@@ -34,6 +34,63 @@ restart with `AggregateError [ETIMEDOUT]` against the rig's API. The app was hea
 direct HTTPS request returned 200 in the same window), so this is the CLI's own connection, not the
 application. Retry it rather than treating it as evidence of anything.
 
+## Gate 3: update and restore. PASS
+
+Both legs run for real against the platform: an actual `cloudron update` between two built package
+versions, and an actual in-place restore from an actual backup. Neither was simulated, and the
+instance held Gate 2's data throughout, so the data is the canary rather than an afterthought.
+
+Baseline captured before either operation: secret digests, modes and ownership, per-store counts, and
+the sha256 of every stored file.
+
+| Invariant | Update, 0.1.0 to 0.1.1 | Restore, in place from backup |
+| --- | --- | --- |
+| `secret-key` sha256 | `2e0e57b0…` unchanged | `2e0e57b0…` unchanged |
+| `fernet-key` sha256 | `4fb4fbfe…` unchanged | `4fb4fbfe…` unchanged |
+| Secret modes | all `600 cloudron:cloudron` | all four files `600 cloudron:cloudron`, re-asserted by the boot |
+| Boot path | `existing secret found` twice, `generating new secret` zero times | same |
+| Which build is serving | boot logs `package_revision=0.19.0-5`, so the image really was swapped | same revision after restore |
+| Activities / gear / weight / users / API keys | 1 / 1 / 1 / 2 / 1, all unchanged | 1 / 1 / 1 / 2 / 1, all unchanged |
+| Stored files | user image `9785fa0c…` and activity file `94b62fc4…` unchanged | both unchanged |
+| Identity provider | intact | intact, and `sso_enabled` still true |
+| Platform task | update task completed, backup taken automatically first | backup and restore tasks both completed |
+
+### The restore was made falsifiable
+
+A restore that changes nothing proves nothing: if the data had simply never been touched, every count
+above would still have matched. So a marker was planted **after** the backup was taken, a second
+weight entry of 99.9 on a different date, and the restore was checked for both directions at once:
+
+- The marker is **gone** after the restore, so the restore genuinely replaced state rather than
+  no-opping.
+- The pre-backup entry of 78.4 **survived**, so it replaced state with the right state.
+
+That pairing is what turns "the app came back up" into evidence.
+
+### The encrypted-data canary
+
+`FERNET_KEY` byte-identity is the invariant this package cares most about, because the key encrypts
+Strava and Garmin tokens, MFA secrets, identity-provider link tokens and the identity provider's own
+client secret, and there is no upstream re-encryption tool. It is unchanged across both operations,
+and independently corroborated: the provisioned identity provider still works after the restore,
+which it could not if its stored client secret had been encrypted under a key that no longer existed.
+
+### What the gate taught
+
+**A package version bump is enough to exercise the update path.** The reference allows two release
+candidates of the same upstream version, and that is what was used: 0.1.0 to 0.1.1, same upstream
+0.19.0. What is being proven is the package's own update path, and waiting for an upstream release to
+prove it is how an update drill ends up permanently owed.
+
+**Bake the packaging revision into the image.** A running container could not previously say which
+build it was; the platform reports its own app version and the manifest pins a digest, but neither
+answers that question from inside. A `build-info` file written at build time and logged on the first
+line of the boot makes the update leg self-evidencing: the log says which revision is serving, rather
+than the digest having to be correlated by hand.
+
+**`cloudron restore` takes `--backup`, not `--backup-id`.** A small thing, recorded because the
+obvious guess fails and the error message is the only hint.
+
 ## Gate 2: functional flows. PASS
 
 Flows enumerated before testing, chosen so that every declared addon is exercised by at least one of
