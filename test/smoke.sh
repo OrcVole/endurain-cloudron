@@ -488,6 +488,31 @@ if podman exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -c "CREATE DATABAS
             fail "local_login_enabled is '${local_login:-<absent>}': enabling SSO disabled local accounts"
         fi
 
+        # The SSRF guard must not reject the platform's own identity
+        # provider. On the rig the dashboard hostname resolves to a private
+        # address INSIDE the container, so the browser-facing half of the
+        # flow works, the user authenticates, and the callback then dies at
+        # the server-side token exchange with "URL resolves to a non-public
+        # address". Nothing reachable over HTTP shows this: it has to be
+        # asked of the validator itself. Here the fake issuer host does not
+        # resolve at all, so this asserts the narrower thing the package
+        # controls, that the allowlist is populated from the addon's issuer
+        # rather than left empty.
+        # Read the APP process's environment, and read it AS the app's own
+        # user. Two traps here, both hit while writing this assertion:
+        # PID 1 is tini (start.sh re-execs under it on line one), and tini's
+        # environ is a snapshot from before the rest of the boot ran, so it
+        # never contains anything exported later. And /proc/<pid>/environ of
+        # a process belonging to another user is unreadable even to root
+        # inside a rootless container, so this has to run as cloudron.
+        ssrf_allow="$(podman exec --user cloudron "$SSO_CONTAINER" bash -c \
+            'p=$(pgrep -f "uvicorn|python.*main" | head -1); tr "\0" "\n" < /proc/$p/environ | grep "^SSRF_ALLOWED_HOSTS=" | cut -d= -f2-' 2>/dev/null | tr -d '\r')"
+        if [[ "$ssrf_allow" == "sso.example.com" ]]; then
+            pass "the OIDC issuer host is on the SSRF allowlist, so server-side token exchange is permitted"
+        else
+            fail "SSRF_ALLOWED_HOSTS is '${ssrf_allow:-<empty>}', expected the addon's issuer host: SSO will fail at the callback"
+        fi
+
         idp_file="$SCRATCH_DIR/sso-idp.json"
         curl -sS -o "$idp_file" "$sso_origin/api/v1/public/idp" -H 'X-Client-Type: web' >/dev/null 2>&1
         if grep -q '"slug"[[:space:]]*:[[:space:]]*"cloudron"' "$idp_file" 2>/dev/null; then
