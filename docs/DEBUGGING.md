@@ -34,6 +34,26 @@ restart with `AggregateError [ETIMEDOUT]` against the rig's API. The app was hea
 direct HTTPS request returned 200 in the same window), so this is the CLI's own connection, not the
 application. Retry it rather than treating it as evidence of anything.
 
+## Ladder status
+
+Gates 0 to 4 all pass against image digest `sha256:7ceeb119…`, package version 0.1.1.
+
+The manifest carrying the new `healthCheckPath` has been applied to a real install and the platform
+has polled it: the install's own "wait for health check" phase completed against
+`/api/v1/public/server_settings`, and the platform's stored manifest and reported state read back as
+
+```
+healthCheckPath : /api/v1/public/server_settings
+version         : 0.1.1
+memoryLimit     : 1610612736 (1.50 GiB)
+health          : healthy
+runState        : running
+```
+
+That also means the application is now running at the **shipped** memory limit rather than the 2 GiB
+the test install was created with, so the sizing verdict below describes the configuration that
+actually ships.
+
 ## Gate 4: memory. PASS at `memoryLimit` 1.5 GiB
 
 The application's primary store is the platform's PostgreSQL addon, in its own container, and nothing
