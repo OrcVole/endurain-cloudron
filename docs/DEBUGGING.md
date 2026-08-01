@@ -34,7 +34,55 @@ restart with `AggregateError [ETIMEDOUT]` against the rig's API. The app was hea
 direct HTTPS request returned 200 in the same window), so this is the CLI's own connection, not the
 application. Retry it rather than treating it as evidence of anything.
 
-## Gate 1: auth and SSO. OPEN, pending the operator's browser sign-in
+## Gate 1: auth and SSO. PASS
+
+Closed after a real Cloudron user signed in through a real browser and landed inside the
+application. Three defects were found and fixed on the way, all of them in the half of the flow
+that no HTTP request from outside can reach.
+
+| Invariant | Proof |
+| --- | --- |
+| Sign-in works end to end | A real Cloudron user completed the browser flow and landed signed in, confirmed by the operator |
+| The callback path matches the manifest | Observed in the app's log: `GET /api/v1/public/idp/callback/cloudron?code=…&state=…&iss=…` returning 307, exactly the `loginRedirectUri` the manifest declares. The platform's own addon setup logs the same path back |
+| The whole sequence, in order | `GET /public/idp` 200, then `GET /public/idp/login/cloudron` with a PKCE challenge 307, then the callback 307, then `POST /public/idp/session/{id}/tokens` 200 |
+| An account exists for the identity | The application's own user list reports two users: the local `admin` account, and a second account created by the sign-in with `access_type=regular`, active, email verified. The session is the application's own, not a proxy artefact |
+| SSO does not fence the device pipeline | An upload carrying only `X-API-Key`, no browser session, returns 201 and parses the activity, with SSO active |
+| Credential-less access is refused | The same upload with no header, and with an invalid key, returns 401 |
+| Public paths stay open | `/api/v1/about`, `/` and `/env.js` all 200 without a session |
+| Protected paths stay protected | `/api/v1/profile` and `/api/v1/profile/api_keys` both 401 without a session |
+| Local login survives alongside SSO (`optionalSso`) | Login with the generated admin password returns 200 while SSO is enabled; `local_login_enabled` is true |
+| The seeded credential is dead | `admin`/`admin` returns 401 |
+| No unintended proxyAuth | Not declared, and every endpoint above answers directly rather than redirecting to a platform login page |
+
+### The before-and-after that closed it
+
+The same callback request, on the same install, either side of the SSRF fix:
+
+| Time | Request | Result |
+| --- | --- | --- |
+| Before | `GET /api/v1/public/idp/callback/cloudron?code=…` | **400 Bad Request** (`URL resolves to a non-public address`) |
+| After | the same request | **307**, followed by a 200 token exchange |
+
+### Three defects, and why local testing could not see any of them
+
+1. **The provider was created but SSO was never switched on.** The login page draws its SSO button
+   only when the server-settings row has `sso_enabled`, and that column defaults to false. The
+   provider existed, the public provider endpoint listed it, and the redirect worked when driven by
+   hand; a human saw a login form with no button.
+2. **The server-side token exchange was blocked by the application's own SSRF guard.** An app
+   container reaches the dashboard over the internal bridge, so the issuer hostname resolves inside
+   the container to an RFC1918 address (measured: `172.18.0.1`) while resolving publicly from
+   everywhere else. Every browser-facing step therefore succeeded and only the token exchange
+   failed. Fixed by allowlisting the issuer hostname alone, never the bridge CIDR.
+3. **The frontend was not being served at all** (recorded under Gate 0's rerun): symlinked assets
+   were refused by Starlette, so the page loaded and the application was blank.
+
+The common thread is worth stating plainly, because it shaped the rest of this package's testing.
+Every one of these lived in a place an HTTP request from outside cannot reach: a database column, a
+DNS answer that differs by vantage point, and a static-file resolver's security check. A gate that
+only issues requests will pass while any of them is broken.
+
+## Superseded: Gate 1 while it was open
 
 Everything that can be established without a human is below. The gate reference is explicit that a
 real sign-in by a real user in a real browser is required and that the gate may not be closed on
