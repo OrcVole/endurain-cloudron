@@ -111,6 +111,12 @@ https://endurain.example.com/api/v1/activities/create/upload
 with the key in an `X-API-Key` header. See [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) for
 device-specific notes.
 
+## Links
+
+- Cloudron forum announcement and discussion: https://forum.cloudron.io/topic/15768/endurain-community-package-now-available
+- Upstream project: https://codeberg.org/endurain-project/endurain
+- Upstream issue raised by this packaging work: https://codeberg.org/endurain-project/endurain/issues/858
+
 ## Known issues
 
 Two faults in the application itself, found while packaging and verified on a real installation, are
