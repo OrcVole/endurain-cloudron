@@ -72,6 +72,35 @@ general rule this package now follows is that a security guard should test the c
 actually cares about, because a guard phrased as a proxy for that condition can be wrong without
 anything appearing to go wrong.
 
+Following that rule to its conclusion changes what the marker file is for. The credential check now
+runs on every boot rather than only when the marker is absent, and the marker records that
+provisioning has run rather than standing as proof that the credential is safe. The distinction is
+not academic: the marker lives on the data volume while the fact it would vouch for lives in the
+database, and those are separate persistence domains. A database restored to a point before
+neutralisation, or an addon reprovisioned behind a surviving volume, leaves a stale marker
+asserting that the seeded credential was dealt with when it is live again. One query per boot
+removes the whole class of question. Where the two disagree the package says so in its log and
+replaces the password rather than quietly repairing it, because both plausible causes are things an
+operator should know about. The consequence worth stating plainly is that an operator who
+deliberately sets the admin password back to `admin` will find it replaced on the next boot: that is
+intended, since the whole point is that this particular password is public knowledge.
+
+The order of the two writes is also deliberate. The password file is written before the database
+commit, not after. `upsert_password_hash()` commits immediately, so writing the file afterwards
+leaves a failure mode that locks the operator out of their own installation: a committed password
+that exists nowhere readable. In the chosen order both failure modes are recoverable. A failed file
+write aborts the boot with the seeded credential still in place, which is bad but obvious and
+fixable; a failed commit leaves a file naming a password that was never set, and the next boot finds
+the seeded credential still live, regenerates, and overwrites it.
+
+`SECRET_KEY` is validated on every boot in the same way `FERNET_KEY` is, and for the same reason.
+The seeding test is only "exists and is non-empty", which cannot distinguish a complete key from a
+partial one, so an interrupted first write leaves a short value that every later boot accepts as
+already seeded. A truncated `FERNET_KEY` announces itself by failing to load; a truncated
+`SECRET_KEY` does not fail at all, it silently weakens the key that signs every session token, which
+is precisely what makes it worth an explicit check. Neither key is ever regenerated in response to
+failing its check.
+
 ## Alternatives considered
 
 Letting the operator set both keys through install-time configuration fields, instead of generating

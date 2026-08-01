@@ -71,6 +71,39 @@ this entry is inferred from documentation alone.
   importing it, because the module it lives in is an Alembic script that is not valid to
   import outside an Alembic run.
 
+- **`CMD script.sh` leaves the shell as PID 1 for the whole boot, and a shell is not an init.**
+  Running the start script directly is the correct shape for this platform, since an `ENTRYPOINT`
+  breaks the dashboard's debug mode, but it means bash is PID 1 for everything before the final
+  `exec`: secret seeding, the frontend tree rebuild, database migrations, provisioning. Bash running
+  non-interactively does not act on SIGTERM while it waits for a foreground child, and PID 1 has no
+  default disposition for it either, so a stop arriving in that window is not delayed, it is
+  ignored until the platform gives up and sends SIGKILL. Measured on this package before the fix: a
+  stop issued during `alembic upgrade head` took the entire 20 second grace period and exited 137.
+  After re-execing the script under `tini -g` on its first line, the same stop exits 143 in under a
+  second. Putting tini only on the final `exec`, which is the usual advice, does nothing for this
+  window. The platform restarts an app on update and after configuration changes, and a first boot
+  running migrations is exactly when a restart is most likely, so the window is not theoretical.
+- **A file-based marker cannot vouch for a fact that lives in the database.** First-run provisioning
+  guarded itself with a marker file on the data volume, but what it was really asserting was
+  something about a database row. Those are separate persistence domains: a database restored to a
+  point before provisioning, or an addon reprovisioned behind a surviving volume, leaves a stale
+  marker claiming work was done that has come undone. The fix was to ask the database directly on
+  every boot, which costs one query and cannot go stale, and to demote the marker to what it can
+  honestly record, namely that provisioning has run at all.
+- **Order the two halves of a credential change so the recoverable failure is the one you get.** The
+  write that sets the new password commits immediately, so recording it for the operator afterwards
+  leaves a failure mode that locks them out of their own installation: a committed password that
+  exists nowhere readable. Writing the operator's copy first inverts that. A failed file write
+  aborts the boot with the old credential still working, and a failed commit leaves a file naming a
+  password that was never set, which the next boot notices and corrects.
+- **A build gate that names its imports by hand covers only what someone thought of.** The
+  build-time import check listed eleven modules; the project declares forty-seven runtime
+  dependencies, and the check never imported the application itself, so it could pass while
+  something the app genuinely needs was missing. Importing the real entrypoint builds the actual
+  module graph and fails the build rather than the first boot on a stranger's server. Safe to do at
+  build time here, verified rather than assumed: the import opens no database connection and starts
+  no scheduler.
+
 **Environment note for anyone smoke-testing locally with podman:**
 
 - **Podman on Fedora and RHEL will mount a read-only directory over `/run/secrets`.**

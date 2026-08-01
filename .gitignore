@@ -7,3 +7,5 @@ phase-notes/
 *.secret
 node_modules/
 screenshot-work/
+__pycache__/
+*.pyc

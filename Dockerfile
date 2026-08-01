@@ -189,6 +189,33 @@ RUN chmod 0755 /app/code/start.sh \
 # Cloudron ever starts a container from this image.
 RUN /app/code/venv/bin/python -c "import fastapi, sqlalchemy, alembic, psycopg, stravalib, garminconnect, fitdecode, gpxpy, tcxreader, cryptography.fernet, PIL; print('==> runtime import gate OK')"
 
+# The gate that actually covers the application. The named-module list above
+# is a hand-picked eleven out of the forty-seven runtime dependencies
+# backend/pyproject.toml declares, so it can pass while something the app
+# genuinely imports is missing or broken. Importing main builds the real
+# module graph, including the FastAPI app object and every router, so a
+# missing dependency or an import-time error fails the BUILD instead of the
+# first boot on someone's server.
+#
+# Safe to do at build time, and verified so rather than assumed: the import
+# opens no database connection (SQLAlchemy connects lazily) and starts no
+# scheduler (that happens in the lifespan handler, not at import). The
+# placeholder secrets exist only to satisfy config validation and never reach
+# the image; the path overrides keep core/config.py's import-time mkdir out
+# of /app, and the temporary tree is removed in the same layer. The two
+# storage-URI warnings this prints are the expected result of running without
+# the redis addon present, not a fault.
+RUN set -eu; \
+    export DB_PASSWORD=build-gate-placeholder; \
+    export SECRET_KEY=0000000000000000000000000000000000000000000000000000000000000000; \
+    export FERNET_KEY="$(/app/code/venv/bin/python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"; \
+    export ENDURAIN_HOST=http://localhost:8080 ENVIRONMENT=production; \
+    export BACKEND_DIR=/app/code/upstream/backend; \
+    export DATA_DIR=/tmp/import-gate/data LOGS_DIR=/tmp/import-gate/logs FRONTEND_DIR=/tmp/import-gate/frontend; \
+    cd /app/code/upstream/backend/app; \
+    /app/code/venv/bin/python -c "import main; assert main.app is not None; print('==> runtime app import gate OK')"; \
+    rm -rf /tmp/import-gate
+
 # No ENTRYPOINT: Cloudron packages start with CMD so the platform can
 # override the start command without also overriding a baked-in entry
 # script (ADR 0001). No HEALTHCHECK: Cloudron manages health itself via

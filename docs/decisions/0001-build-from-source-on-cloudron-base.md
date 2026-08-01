@@ -41,8 +41,12 @@ URL and verified against a pinned SHA256 rather than installed from a package in
 manages its own CPython 3.13 interpreter and virtual environment inside the copied source tree,
 using `uv sync --frozen` against the project's own lockfile, so the interpreter Endurain runs under
 is the one `uv` fetches, not whatever Python happens to be preinstalled on `cloudron/base`. The
-frontend is built with the Node 24 toolchain that `cloudron/base` itself provides, rather than a
-separate Node build stage.
+frontend needs Node 24 and `cloudron/base` provides only Node 22.14.0, which is below the floor
+upstream's `package.json` declares, so the builder stage fetches the Node 24 tarball by pinned URL
+and verifies it against a pinned SHA256, exactly as it does for `uv`. That is a builder-stage
+addition only: the runtime stage never needs Node, because uvicorn serves the built static
+directory. The pinned Node version bundles npm 11, which matters independently of the version
+floor, since the base's own npm 10 rejects upstream's lockfile outright.
 
 ## Alternatives considered
 

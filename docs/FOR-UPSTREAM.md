@@ -35,6 +35,26 @@ assumption when a request is rejected as unauthorised is that the credentials ar
 status, a 400 with a hint naming the missing header, rather than folding it into the same 401 as an
 actual authentication failure, would save the next integrator that time.
 
+## Thumbnail generation writes its PNG without the atomic pattern used elsewhere
+
+`generate_activity_thumbnail()` writes to its final path directly
+(`image.save(str(output_path), "PNG")` in
+`backend/app/activities/activity/thumbnail.py`), while every other write path under the data
+directory, in `core/file_uploads.py`, goes through a temporary `.part` file and an `os.replace()`.
+The scheduler calls the thumbnail path unattended, on an hourly interval, for the life of the
+process, so it writes with no user action and no quiet period.
+
+That combination matters to any platform that backs up a running application by walking its data
+directory, which is how Cloudron works: there is no pause and no post-backup hook, so a walk that
+reads a thumbnail during the window when it is being written captures a truncated PNG. The restored
+file then exists on disk, so the `is_file()` check treats it as present and the hourly regeneration
+job passes over it, leaving one activity with a permanently broken thumbnail that nothing detects.
+
+Routing thumbnail writes through the same `.part`-then-rename helper the upload paths already use
+would close the window entirely, and is a small change against code that already exists in the
+project. Having the regeneration job verify an existing thumbnail rather than only test for its
+presence would additionally let an instance heal a file damaged some other way.
+
 ## A stated libc and Python floor
 
 This package builds Endurain from source rather than from the published container image, so it does

@@ -15,6 +15,32 @@
 
 set -euo pipefail
 
+# --- signal handling for the whole boot sequence ---------------------------
+#
+# Re-exec under tini before doing anything else, so tini is PID 1 for the
+# ENTIRE script rather than only for uvicorn at the end.
+#
+# Without this, bash is PID 1 for the whole pre-serve sequence (secret
+# seeding, the frontend farm rebuild, `alembic upgrade head`, provision.py).
+# Bash running non-interactively does not act on SIGTERM while it waits for a
+# foreground child, and PID 1 has no default disposition for it either, so a
+# stop or restart arriving in that window is not merely delayed: it is
+# ignored until the platform gives up and sends SIGKILL. Cloudron restarts an
+# app during updates and after configuration changes, and first-boot
+# migrations are exactly when a restart is most likely, so this window is not
+# theoretical. It was observed directly: a restart issued mid-boot sat out
+# the full ten second grace period and ended in SIGKILL.
+#
+# -g makes tini signal the whole process group rather than just its immediate
+# child, which is what actually reaches alembic or provision.py mid-run; bash
+# alone would still sit on the signal until its foreground child finished.
+# The guard variable keeps the re-exec to one level, and CMD stays
+# ["/app/code/start.sh"] so Cloudron's debug mode still works (ADR 0001).
+if [[ "${ENDURAIN_TINI_PID1:-}" != "1" ]]; then
+    export ENDURAIN_TINI_PID1=1
+    exec /usr/bin/tini -g -- "$0" "$@"
+fi
+
 CODE=/app/code
 DATA=/app/data
 RUN_DIR=/run/endurain
@@ -76,6 +102,19 @@ fi
 chown cloudron:cloudron "$SECRET_KEY_PATH" "$FERNET_KEY_PATH"
 chmod 0600 "$SECRET_KEY_PATH" "$FERNET_KEY_PATH"
 
+# The two files provision.py writes live in the same directory and carry the
+# same exposure, but provision.py sets their modes once, inside a branch that
+# a marker file stops it from ever entering again. That leaves them relying
+# on a previous boot having got it right, which is the assumption this script
+# refuses to make everywhere else. Re-asserted here when present, so a
+# restore that resets ownership cannot leave a readable admin password behind.
+for provisioned in "$DATA/.secrets/.admin-provisioned" "$DATA/.secrets/admin-initial-password"; do
+    if [[ -e "$provisioned" ]]; then
+        chown cloudron:cloudron "$provisioned"
+        chmod 0600 "$provisioned"
+    fi
+done
+
 # Validate the Fernet key loads before it is ever handed to the
 # application. Never regenerate on failure: a key that fails to load here
 # almost always means the volume was truncated or otherwise damaged, and
@@ -86,6 +125,20 @@ if ! "$VENV_PYTHON" -c \
     "from cryptography.fernet import Fernet; import sys; Fernet(open(sys.argv[1], 'rb').read().strip())" \
     "$FERNET_KEY_PATH" >/dev/null 2>&1; then
     fail "fernet-key at $FERNET_KEY_PATH failed to load; refusing to regenerate it. Restore it from backup."
+fi
+
+# The same treatment for secret-key, for the same reason. The seeding test
+# above is only -s (non-empty), which cannot tell a complete key from a
+# partial one: if `openssl rand -hex 32` is interrupted after the redirection
+# has created the file but before openssl has written all 64 characters, the
+# short value survives on disk and every later boot accepts it as already
+# seeded. A truncated SECRET_KEY is not a crash, which is what makes it worth
+# checking: it silently weakens the key that signs every session token.
+# Validated rather than regenerated, exactly as ADR 0003 prescribes for
+# fernet-key, because a regenerated SECRET_KEY invalidates live sessions and
+# a damaged volume is the operator's decision to make, not this script's.
+if [[ ! "$(cat "$SECRET_KEY_PATH")" =~ ^[0-9a-f]{64}$ ]]; then
+    fail "secret-key at $SECRET_KEY_PATH is not 64 hex characters; refusing to regenerate it. Restore it from backup."
 fi
 
 # --- /run/secrets bridge ---------------------------------------------------
@@ -270,5 +323,9 @@ esac
 
 log "starting uvicorn on :8080 (log-level=${LOG_LEVEL:-info})"
 cd "$UP/app"
-exec /usr/bin/tini -- gosu cloudron:cloudron "$VENV_PYTHON" -m uvicorn main:app \
+# No tini here: the re-exec at the top of this script already made tini PID 1,
+# and it stays PID 1 across this exec, so uvicorn is reaped and signalled
+# correctly. Invoking tini a second time would nest a second init inside the
+# first for no benefit.
+exec gosu cloudron:cloudron "$VENV_PYTHON" -m uvicorn main:app \
     --host 0.0.0.0 --port 8080 --log-level "${LOG_LEVEL:-info}" --proxy-headers

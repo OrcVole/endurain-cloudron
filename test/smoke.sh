@@ -21,6 +21,7 @@ VOLUME=endurain-smoke-data
 APP_CONTAINER=endurain-smoke-app
 PG_CONTAINER=endurain-smoke-pg
 REDIS_CONTAINER=endurain-smoke-redis
+BOOTSTOP_CONTAINER=endurain-smoke-bootstop
 HOST_PORT=18080
 ORIGIN="http://127.0.0.1:${HOST_PORT}"
 
@@ -56,7 +57,7 @@ die() {
 
 cleanup() {
     log "cleaning up"
-    podman rm -f "$APP_CONTAINER" "$PG_CONTAINER" "$REDIS_CONTAINER" >/dev/null 2>&1 || true
+    podman rm -f "$APP_CONTAINER" "$BOOTSTOP_CONTAINER" "$PG_CONTAINER" "$REDIS_CONTAINER" >/dev/null 2>&1 || true
     podman volume rm -f "$VOLUME" >/dev/null 2>&1 || true
     podman network rm -f "$NET" >/dev/null 2>&1 || true
     rm -rf "$SCRATCH_DIR"
@@ -195,6 +196,21 @@ if [[ "$about_version" == "v0.19.0" ]]; then
     pass "/api/v1/about reports version v0.19.0"
 else
     fail "/api/v1/about reported version '$about_version', expected v0.19.0"
+fi
+
+# --- init: tini must be PID 1 for the WHOLE boot, not just for uvicorn ------
+# start.sh re-execs itself under `tini -g` on its first line. Before that, bash
+# was PID 1 for the entire pre-serve sequence (secret seeding, migrations,
+# provisioning), and bash running non-interactively does not act on SIGTERM
+# while it waits for a foreground child, so a stop arriving in that window was
+# ignored until the platform gave up and sent SIGKILL. Asserting on PID 1 here
+# is the structural half of that guarantee; the timed stop at the end of this
+# script is the behavioural half.
+pid1_comm="$(podman exec "$APP_CONTAINER" ps -p 1 -o comm= 2>/dev/null | tr -d '[:space:]')"
+if [[ "$pid1_comm" == "tini" ]]; then
+    pass "PID 1 is tini, so signals are handled from the first line of the boot"
+else
+    fail "PID 1 is '${pid1_comm:-<unknown>}', expected tini"
 fi
 
 # --- process identity -------------------------------------------------------
@@ -375,6 +391,77 @@ if [[ -n "$fernet_key_value" ]] && printf '%s\n' "$full_logs" | grep -qF -- "$fe
 fi
 if [[ "$secret_leaked" -eq 0 ]]; then
     pass "no secret value (admin password, secret-key, fernet-key) appears in container logs"
+fi
+
+# --- a stop DURING the boot sequence must be answered, not waited out -------
+#
+# Regression test for the defect the pre-install review panel found: with bash
+# as PID 1 and no trap, a SIGTERM arriving before the final exec had no
+# destination, so a stop mid-migration sat out the platform's whole grace
+# period and ended in SIGKILL. Cloudron restarts an app on update and after
+# configuration changes, and a first boot running migrations is exactly when
+# that is most likely, so this is worth a standing assertion rather than a
+# one-off check.
+#
+# A fresh database is what makes the window real: it forces the full migration
+# chain to run, giving a pre-serve window of several seconds to aim at. The
+# container is throwaway, so /app/data is a tmpfs rather than a volume.
+BOOTSTOP_DB=endurain_bootstop
+BOOTSTOP_GRACE=20
+
+log "checking that a stop DURING the boot sequence is answered promptly"
+if podman exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -c "CREATE DATABASE ${BOOTSTOP_DB};" >/dev/null 2>&1; then
+    podman run -d --name "$BOOTSTOP_CONTAINER" \
+        --network "$NET" \
+        --read-only --tmpfs /run --tmpfs /run/secrets --tmpfs /tmp --tmpfs /app/data \
+        -e CLOUDRON_POSTGRESQL_HOST="$PG_CONTAINER" \
+        -e CLOUDRON_POSTGRESQL_PORT=5432 \
+        -e CLOUDRON_POSTGRESQL_USERNAME="$PG_USER" \
+        -e CLOUDRON_POSTGRESQL_PASSWORD="$PG_PASSWORD" \
+        -e CLOUDRON_POSTGRESQL_DATABASE="$BOOTSTOP_DB" \
+        -e CLOUDRON_REDIS_URL="redis://${REDIS_CONTAINER}:6379" \
+        -e CLOUDRON_APP_ORIGIN="$ORIGIN" \
+        -e CLOUDRON_PROXY_IP="$GATEWAY" \
+        "$IMAGE" >/dev/null 2>&1
+
+    # Wait for the migration step specifically, rather than sleeping a fixed
+    # interval and hoping. A fixed sleep is what makes a timing test lie: too
+    # short and the container has barely started, too long and it has already
+    # reached the final exec, at which point uvicorn is handling signals and
+    # the very window under test has been skipped. Polling for the log line
+    # puts the stop inside `alembic upgrade head`, which is both the longest
+    # step before the exec and the one a platform restart is most likely to
+    # interrupt on a first install.
+    bootstop_phase="(never reached the migration step)"
+    for _ in $(seq 200); do
+        if podman logs "$BOOTSTOP_CONTAINER" 2>&1 | grep -q "running database migrations"; then
+            bootstop_phase="mid-migration"
+            break
+        fi
+        sleep 0.25
+    done
+
+    stop_started="$SECONDS"
+    podman stop -t "$BOOTSTOP_GRACE" "$BOOTSTOP_CONTAINER" >/dev/null 2>&1
+    stop_elapsed="$((SECONDS - stop_started))"
+    bootstop_exit="$(podman inspect "$BOOTSTOP_CONTAINER" --format '{{.State.ExitCode}}' 2>/dev/null)"
+
+    # Generous threshold: the point is "answered" versus "waited out to the
+    # SIGKILL", not a precise shutdown budget. Hitting the full grace period
+    # is the failure being guarded against.
+    if [[ "$bootstop_phase" != "mid-migration" ]]; then
+        # Say so rather than reporting a pass that tested the wrong moment.
+        fail "the mid-boot stop check never caught the migration step, so it proved nothing"
+    elif [[ "$stop_elapsed" -lt "$BOOTSTOP_GRACE" && "$bootstop_exit" != "137" ]]; then
+        pass "stop during migrations answered in ${stop_elapsed}s (exit ${bootstop_exit}), well inside the ${BOOTSTOP_GRACE}s grace"
+    else
+        fail "stop during migrations took ${stop_elapsed}s and exited ${bootstop_exit} (137 = SIGKILL): the boot sequence is ignoring SIGTERM"
+    fi
+
+    podman rm -f "$BOOTSTOP_CONTAINER" >/dev/null 2>&1
+    podman exec "$PG_CONTAINER" psql -U "$PG_USER" -d "$PG_DB" -c "DROP DATABASE ${BOOTSTOP_DB};" >/dev/null 2>&1
+else
+    fail "could not create the ${BOOTSTOP_DB} database, so the mid-boot stop check did not run"
 fi
 
 # ---------------------------------------------------------------------------
