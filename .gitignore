@@ -1,0 +1,9 @@
+.anonymize-list
+*token*.txt
+.env
+.env.*
+phase-notes/
+.claude/
+*.secret
+node_modules/
+screenshot-work/

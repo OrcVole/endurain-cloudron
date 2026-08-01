@@ -1,0 +1,36 @@
+{
+  "id": "io.github.orcvole.endurain",
+  "title": "Endurain",
+  "author": "OrcVole",
+  "tagline": "Self-hosted fitness tracking for endurance sports",
+  "description": "file://DESCRIPTION.md",
+  "changelog": "file://CHANGELOG.md",
+  "icon": "file://logo.png",
+  "version": "0.1.0",
+  "upstreamVersion": "0.19.0",
+  "healthCheckPath": "/api/v1/about",
+  "httpPort": 8080,
+  "addons": {
+    "localstorage": {},
+    "postgresql": {},
+    "redis": {},
+    "sendmail": {},
+    "oidc": {
+      "loginRedirectUri": "/api/v1/public/idp/callback/cloudron"
+    }
+  },
+  "optionalSso": true,
+  "memoryLimit": 1610612736,
+  "configurePath": "/",
+  "postInstallMessage": "file://POSTINSTALL.md",
+  "manifestVersion": 2,
+  "minBoxVersion": "9.1.0",
+  "packagerName": "OrcVole",
+  "packagerUrl": "https://github.com/OrcVole/endurain-cloudron",
+  "contactEmail": "Most+github@OrcadianVole.com",
+  "website": "https://endurain.com",
+  "documentationUrl": "https://docs.endurain.com",
+  "iconUrl": "https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/logo.png",
+  "tags": ["fitness", "tracking", "health", "gpx", "strava", "garmin"],
+  "mediaLinks": ["https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/docs/screenshot.png"]
+}
