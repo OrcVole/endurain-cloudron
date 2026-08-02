@@ -1,3 +1,5 @@
+<upstream>0.19.0</upstream>
+
 Endurain is a self-hosted fitness tracking platform for endurance sports: running,
 cycling, hiking, swimming, gym work and more. Upload activities as FIT, GPX or TCX
 files, sync automatically from Strava and Garmin Connect, follow other users, track
