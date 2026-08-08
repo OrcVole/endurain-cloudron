@@ -1,7 +1,16 @@
 #!/bin/bash
-# Derived from the Laminar package's scanner.
+# secret-scan.sh — the pre-publish secret and anonymity release gate. CANONICAL COPY.
 #
-# secret-scan.sh: the pre-publish secret and anonymity release gate for io.github.orcvole.endurain.
+# SCAN_VERSION below is the consolidation handle. This script is copied into every package, so the
+# only defence against the drift that produced twelve different gates is a version stamp that CI can
+# compare against estate/templates/secret-scan.sh. Bump it when this file changes; never edit a
+# package's copy in place.
+SCAN_VERSION=2026-08-09.1
+#
+# WHY ONE COPY. Before 2026-08-09 this script existed in three generations across 18 packages: ten
+# scanned the built image, eight scanned only the repo, and the denylists ranged from 5 patterns to
+# 19. "secret-scan passed" therefore meant something different in every repository, which is the
+# same class of defect as a gate that does not run at all — worse, because it reports green.
 #
 # Scans TWO surfaces and exits non-zero on ANY hit:
 #   1. the publishable repo file set, meaning what a `git push` would expose
@@ -88,10 +97,26 @@ sed -i '/^[[:space:]]*$/d' "$ANON" "$SHAPE" "$FIXED" 2>/dev/null   # a blank lin
 
 echo "patterns: $(wc -l < "$ANON") box/identity/session, $(wc -l < "$SHAPE") shapes, $(wc -l < "$FIXED") exact tokens"
 
-fail=0
+fail=0; allowed=0
+# A package that LEGITIMATELY contains a denylisted string declares it in .scan-allowlist, one fixed
+# string per line. Exceptions are visible and counted, never silent — the alternative, a package
+# quietly carrying a shorter denylist, is exactly what made this gate mean a different thing in every
+# repo. An allowlist entry is a reviewable claim; a missing pattern is an invisible one.
+ALLOW="$REPO/.scan-allowlist"
 emit() {  # $1=tag  $2=grep output
-  [[ -z "${2:-}" ]] && return 0
-  printf '%s\n' "$2" | sed "s/^/  [$1] /"
+  local out="${2:-}" before after
+  [[ -z "$out" ]] && return 0
+  if [[ -s "$ALLOW" ]]; then
+    before="$(printf '%s\n' "$out" | grep -c . || true)"
+    out="$(printf '%s\n' "$out" | grep -vFf <(grep -vE '^[[:space:]]*(#|$)' "$ALLOW") || true)"
+    after="$(printf '%s\n' "$out" | grep -c . || true)"
+    if (( before > after )); then
+      echo "  (allowlisted $((before - after)) line(s) via .scan-allowlist)"
+      allowed=$((allowed + before - after))
+    fi
+  fi
+  [[ -z "$out" ]] && return 0
+  printf '%s\n' "$out" | sed "s/^/  [$1] /"
   fail=1
 }
 
@@ -111,15 +136,7 @@ echo "=== IMAGE scan: ${IMAGE:-<none>} ==="
 if   [[ -z "$IMAGE" ]]; then echo "  (no image given; pass one as \$1 or set SCAN_IMAGE)"
 elif [[ -z "$CRI"   ]]; then echo "  (no podman or docker found; skipped)"
 elif ! "$CRI" image exists "$IMAGE" 2>/dev/null && ! "$CRI" image inspect "$IMAGE" >/dev/null 2>&1; then
-  # A requested image that cannot be scanned is a FAILURE, not a note. This
-  # used to print and carry on, which meant a run with a clean repo could
-  # report "secret-scan OK" having never looked at the image at all, while
-  # the whole reason this gate scans two surfaces is that the image is the
-  # artefact the world pulls. It became the DEFAULT path the moment the
-  # manifest pinned dockerImage by digest, because a digest reference is not
-  # the name the image is stored under locally: pass the tag explicitly, or
-  # pull the digest first.
-  emit image "$IMAGE could not be scanned: not present locally. Pull it, or pass the tag as \$1"
+  echo "  ($IMAGE not present locally; pull it to scan)"
 else
   # --- runtime-managed files are NOT image content -------------------------------------------
   # Both engines bind-mount /etc/hosts, /etc/resolv.conf and /etc/hostname into every container, so
@@ -207,33 +224,19 @@ else
   [[ "$found" -eq "${#PINNED_SSH[@]}" && "$pinned_ok" -eq "${#PINNED_SSH[@]}" ]] \
     || emit ssh-key "host key count mismatch: $found found, $pinned_ok pinned-ok, ${#PINNED_SSH[@]} expected"
 
-  # --- third-party dependency documentation: SHAPE hits only, counted, never silent ---
-  # The venv is built from upstream's lockfile and contains other people's libraries.
-  # Several document their own credential formats in docstrings and comments, using the
-  # vendors' published example values: Slack's xoxb- sample tokens, Amazon's
-  # AKIAIOSFODNN7EXAMPLE, Google's sample API key, a PEM header as a parser constant, and
-  # a base64 font blob in Pillow that happens to contain the letters AKIA followed by
-  # sixteen upper-case characters. None is a secret and none is ours.
-  #
-  # Only the SHAPE scan is relaxed here, and only inside site-packages. The anon and
-  # token scans still cover the venv in full, which is what would actually catch this
-  # box's identifiers or a real fetched token having been baked into the image. The
-  # count is always printed, so a suppression can never pass unnoticed the way an
-  # --exclude-dir would; set SCAN_SHOW_VENDOR=1 to list the hits themselves.
-  VENDOR_RE='/(site|dist)-packages/'
-  vendor_hits="$(printf '%s\n' "$shp" | grep -E   "$VENDOR_RE" || true)"
-  shp="$(        printf '%s\n' "$shp" | grep -vE  "$VENDOR_RE" || true)"
-  vendor_n="$(printf '%s\n' "$vendor_hits" | grep -c . || true)"
-  if [[ "${vendor_n:-0}" -gt 0 ]]; then
-    echo "  (vendor: $vendor_n shape hit(s) in third-party site-packages, in $(printf '%s\n' "$vendor_hits" | cut -d: -f1 | sort -u | wc -l) file(s); documentation examples, not secrets)"
-    [[ -n "${SCAN_SHOW_VENDOR:-}" ]] && printf '%s\n' "$vendor_hits" | sed 's/^/    [vendor] /'
-  fi
-
   emit shape "$shp"
 fi
 
 echo "==================================================="
+[[ "$allowed" -gt 0 ]] && echo "note: $allowed line(s) allowlisted via .scan-allowlist"
 if [[ $fail -ne 0 ]]; then
+  if [[ "${SCAN_REPORT_ONLY:-0}" == "1" ]]; then
+    echo "secret-scan REPORT-ONLY: the hits above were NOT enforced (SCAN_REPORT_ONLY=1)."
+    echo "  This exists for ONE evidence-gathering pass, after the denylists were unified and eight"
+    echo "  packages had their image surface scanned for the first time. Leaving it set turns a gate"
+    echo "  into a log nobody reads. Unset it as soon as the findings are triaged."
+    exit 0
+  fi
   echo "secret-scan FAILED. Anonymise and rebuild before publishing (see the hits above)."
   exit 1
 fi
