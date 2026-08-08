@@ -121,17 +121,61 @@ elif ! "$CRI" image exists "$IMAGE" 2>/dev/null && ! "$CRI" image inspect "$IMAG
   # pull the digest first.
   emit image "$IMAGE could not be scanned: not present locally. Pull it, or pass the tag as \$1"
 else
+  # --- runtime-managed files are NOT image content -------------------------------------------
+  # Both engines bind-mount /etc/hosts, /etc/resolv.conf and /etc/hostname into every container, so
+  # a `run`-based grep reads the HOST'S copies and reports the operator's own machine as a leak
+  # inside the artefact. Found 2026-08-08 by this package's first CI run: it failed on /etc/hosts
+  # entries naming the rig. Verified against the mounted image layers: the image ships /etc/hosts
+  # and /etc/resolv.conf as EMPTY files and /etc/hostname as "localhost.localdomain" — the rig's
+  # names exist only in the RUNNING container's copy. podman's default base_hosts_file="" means
+  # "seed it from the host's file", which is how the runner machine's own hosts entries came to
+  # look like the contents of a published image.
+  #
+  # Suppress what can be suppressed, then PROVE the rest rather than trusting it: copy each path out
+  # of a CREATED, NEVER STARTED container — which reads the image layers with no injection — and
+  # scan those copies with the same patterns. A file the image genuinely ships is still scanned; one
+  # it does not ship is simply absent. Only then are the container-side hits for these exact paths
+  # dropped, and only for these exact paths, in the same spirit as the pinned SSH keys below.
+  RUNTIME_PATHS=(/etc/hosts /etc/resolv.conf /etc/hostname)
+  RUNFLAGS=(--network=none)                       # no DNS/hosts wiring either engine can avoid
+  [[ "$CRI" == *podman* ]] && RUNFLAGS+=(--no-hosts)   # podman only; docker always injects
+
+  drop_runtime() {  # remove hits whose path is one of the runtime-managed files
+    local s="$1" p
+    for p in "${RUNTIME_PATHS[@]}"; do s="$(printf '%s\n' "$s" | grep -vF "$p:" || true)"; done
+    printf '%s' "$s"
+  }
+
   # grep INSIDE the image; patterns arrive on stdin. node_modules and .git pruned (upstream noise).
   img() {  # $1=E|F  $2=pattern file  $3..=dirs
     local mode="$1" pf="$2"; shift 2
     [[ -s "$pf" ]] || return 0
-    "$CRI" run --rm -i --user 0 --entrypoint /bin/bash "$IMAGE" \
+    "$CRI" run --rm -i --user 0 "${RUNFLAGS[@]}" --entrypoint /bin/bash "$IMAGE" \
       -c "grep -rIn${mode}H --exclude-dir=node_modules --exclude-dir=.git -f - $* 2>/dev/null" < "$pf"
   }
   CRIT_DIRS="/app /etc /root /home /usr/local /opt"
-  emit anon  "$(img E "$ANON"  $CRIT_DIRS)"
-  emit token "$(img F "$FIXED" $CRIT_DIRS)"
-  shp="$(img E "$SHAPE" $CRIT_DIRS)"
+  emit anon  "$(drop_runtime "$(img E "$ANON"  $CRIT_DIRS)")"
+  emit token "$(drop_runtime "$(img F "$FIXED" $CRIT_DIRS)")"
+  shp="$(drop_runtime "$(img E "$SHAPE" $CRIT_DIRS)")"
+
+  # Now scan the image's OWN copies of those paths, if it ships any.
+  LAYERD="$SCRATCH/layer"; mkdir -p "$LAYERD"
+  cid="$("$CRI" create "$IMAGE" 2>/dev/null || true)"
+  if [[ -n "$cid" ]]; then
+    for p in "${RUNTIME_PATHS[@]}"; do
+      "$CRI" cp "$cid:$p" "$LAYERD/${p//\//_}" 2>/dev/null || true
+    done
+    "$CRI" rm -f "$cid" >/dev/null 2>&1 || true
+  fi
+  shopt -s nullglob; layerfiles=("$LAYERD"/*); shopt -u nullglob
+  if (( ${#layerfiles[@]} )); then
+    echo "  (image ships ${#layerfiles[@]} of ${#RUNTIME_PATHS[@]} runtime-managed paths; scanned from the layers)"
+    [[ -s "$ANON"  ]] && emit anon  "$(grep -IEnHf "$ANON"  "${layerfiles[@]}" 2>/dev/null)"
+    [[ -s "$SHAPE" ]] && emit shape "$(grep -IEnHf "$SHAPE" "${layerfiles[@]}" 2>/dev/null)"
+    [[ -s "$FIXED" ]] && emit token "$(grep -IFnHf "$FIXED" "${layerfiles[@]}" 2>/dev/null)"
+  else
+    echo "  (image ships none of: ${RUNTIME_PATHS[*]} — the container's copies are injected, not artefact)"
+  fi
 
   # --- the inert /etc/ssh host keys: whitelist BY EXACT PATH, with a VISIBLE COUNT ---
   # cloudron/base ships three inert SSH host keys. No sshd runs in the app and the Dockerfile never
@@ -144,7 +188,7 @@ else
     [/etc/ssh/ssh_host_ed25519_key]=0c575ce8d9ba487b05cc473fad4b0650fb950181028e6ac19796f86f56f22a7a
     [/etc/ssh/ssh_host_rsa_key]=ae0ea8087e90baf138d277ca52b6cf47b5010adc0e5bd84236713eee1b85de85
   )
-  ssh_listing="$("$CRI" run --rm --user 0 --entrypoint /bin/bash "$IMAGE" \
+  ssh_listing="$("$CRI" run --rm --user 0 "${RUNFLAGS[@]}" --entrypoint /bin/bash "$IMAGE" \
                   -c 'for f in /etc/ssh/ssh_host_*_key; do [ -e "$f" ] && sha256sum "$f"; done' 2>/dev/null)"
   found=0; pinned_ok=0
   while IFS= read -r line; do
