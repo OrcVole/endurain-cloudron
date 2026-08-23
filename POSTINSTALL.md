@@ -5,13 +5,13 @@
    with the Cloudron File manager (Files, `.secrets`, `admin-initial-password`).
 2. Change that password immediately in Endurain under Settings, then delete the file.
 
-<sso>
+`<sso>`
 Cloudron single sign-on is wired into Endurain's own OpenID Connect login: use the
 "Cloudron" button on the login page. Accounts created through SSO start as standard
 users; promote them from the admin account if needed. The `admin` account itself stays
 local.
 </sso>
-<nosso>
+`<nosso>`
 This installation has single sign-on turned off, so Endurain manages its own accounts:
 sign in with the `admin` account above and add users inside the app. Turning single
 sign-on on later, from the app's Single Sign-On settings in Cloudron, adds a "Cloudron"

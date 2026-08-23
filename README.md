@@ -113,9 +113,9 @@ device-specific notes.
 
 ## Links
 
-- Cloudron forum announcement and discussion: https://forum.cloudron.io/topic/15768/endurain-community-package-now-available
-- Upstream project: https://codeberg.org/endurain-project/endurain
-- Upstream issue raised by this packaging work: https://codeberg.org/endurain-project/endurain/issues/858
+- Cloudron forum announcement and discussion: <https://forum.cloudron.io/topic/15768/endurain-community-package-now-available>
+- Upstream project: <https://codeberg.org/endurain-project/endurain>
+- Upstream issue raised by this packaging work: <https://codeberg.org/endurain-project/endurain/issues/858>
 
 ## Known issues
 
