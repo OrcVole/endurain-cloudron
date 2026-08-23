@@ -1,4 +1,4 @@
-<upstream>0.19.0</upstream>
+`<upstream>`0.19.0</upstream>
 
 Endurain is a self-hosted fitness tracking platform for endurance sports: running,
 cycling, hiking, swimming, gym work and more. Upload activities as FIT, GPX or TCX
@@ -18,7 +18,7 @@ This package runs Endurain on Cloudron with:
 - Long-lived API keys (an Endurain feature since 0.18.0) let devices and apps such as
   Gadgetbridge, OpenTracks or FitoTrack upload activities directly to your instance.
 
-Endurain is developed by the Endurain project (https://endurain.com), licensed
+Endurain is developed by the Endurain project (<https://endurain.com>), licensed
 AGPL-3.0-or-later. This is an unofficial community package; "Endurain" is a registered
 trademark of its author, used here nominatively for a free, non-commercial community
 package in line with the project's trademark policy.

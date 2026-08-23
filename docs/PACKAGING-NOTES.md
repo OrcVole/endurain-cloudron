@@ -163,23 +163,23 @@ this entry is inferred from documentation alone.
 
 ---
 
-## <YYYY-MM-DD>: <short title of the round of work>
+## `<YYYY-MM-DD>`: `<short title of the round of work>`
 
 One paragraph of context: what was being done, why, and what kind of evidence the round produced.
 
 **Validated (decisions that held up):**
 
-- **<The decision>.** What was tested, how, and the observed result that confirms it. Prefer the
+- **`<The decision>`.** What was tested, how, and the observed result that confirms it. Prefer the
   concrete: a status code, a hash, a count, a log line.
 
 **Surfaced (things that were wrong or missing, and are now fixed):**
 
-- **<The finding>.** The symptom first, then the cause established by evidence rather than
+- **`<The finding>`.** The symptom first, then the cause established by evidence rather than
   inference, then the fix that landed and where it landed (which file, which ADR).
 
 **Still open:**
 
-- <The question>, and what would settle it. Mark anything unproven as unverified rather than
+- `<The question>`, and what would settle it. Mark anything unproven as unverified rather than
   writing it as a fact.
 
 ---
