@@ -1,3 +1,11 @@
+[0.1.2]
+
+- Update endurain 0.19.0 -> 0.19.2
+- Security: fixed proxy client IP detection to prevent bypass of IP-based access controls and rate limiting behind a reverse proxy; fixed activity map tile server routing to prevent leakage of user location data to unauthorised external providers; fixed SSO token exchange to ensure the authenticated user is correctly identified
+- Breaking: Users model decoupled from auth tables and legacy ORM relationships removed; existing installs require a database schema migration
+- Routine features and fixes
+- No packaging changes: auth topology, workspace layout and secrets handling unchanged; base and built images digest-pinned
+
 [0.1.1]
 
 - Bake the packaging revision into the image and log it at boot, so a running container identifies its own build

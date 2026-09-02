@@ -15,8 +15,8 @@
 
 FROM cloudron/base:5.0.0@sha256:04fd70dbd8ad6149c19de39e35718e024417c3e01dc9c6637eaf4a41ec4e596c AS builder
 
-ARG ENDURAIN_VERSION=0.19.0
-ARG ENDURAIN_COMMIT=bc88c2a72c286e1dc1eae636ef14550b696c3fe2
+ARG ENDURAIN_VERSION=0.19.2
+ARG ENDURAIN_COMMIT=2d8a1aa7e1048e428e17840a41245537f8cda9aa
 
 # Build-only OS packages. git/curl/ca-certificates/tar fetch and verify
 # upstream and the pinned uv release. The compiler toolchain mirrors
@@ -166,7 +166,7 @@ RUN test -s /app/code/frontend-dist/index.html \
 # Runtime stage.
 FROM cloudron/base:5.0.0@sha256:04fd70dbd8ad6149c19de39e35718e024417c3e01dc9c6637eaf4a41ec4e596c
 
-ARG ENDURAIN_VERSION=0.19.0
+ARG ENDURAIN_VERSION=0.19.2
 ENV ENDURAIN_VERSION=${ENDURAIN_VERSION}
 
 # Package revision, baked in so a RUNNING container can say which build it

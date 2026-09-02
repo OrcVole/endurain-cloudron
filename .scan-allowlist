@@ -5,3 +5,10 @@
 # so the denylist matching it is correct behaviour and allowlisting it is the honest response.
 # Before 2026-08-09 meilisearch alone handled this, with bespoke code; now it is the shared mechanism.
 Most+github@OrcadianVole.com
+
+# Upstream's compiled translation bundles. A five-character identity pattern in the denylist matches
+# a fragment of an ordinary Finnish word inside the minified vue-i18n output, which is a false
+# positive twice over: the string is upstream's translation of its own UI, and the match is a
+# substring of a longer word. The bundles are built from upstream's locale files and contain no
+# estate content. Added 2026-09-02 while publishing 0.1.2.
+/app/code/frontend-dist/assets/virtual_intlify-i18n-

@@ -35,6 +35,8 @@ SCRATCH_DIR="$(mktemp -d)"
 
 FAILED=0
 
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 log() {
     echo "==> $*"
 }
@@ -192,11 +194,18 @@ else
     fail "GET /api/v1/about did not return 200 within the retry window"
 fi
 
+# Read the expected version from the manifest rather than hard-coding it. A literal here makes
+# every update round fail this assertion for the one reason that is not a defect, and the fix then
+# looks like editing a test to make it pass. The manifest is the package's own claim about which
+# upstream it ships, so comparing the running app against it is the assertion that was meant.
+expected_version="v$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["upstreamVersion"])' "$REPO_ROOT/CloudronManifest.json" 2>/dev/null || echo UNREADABLE)"
 about_version="$(json_field "$about_file" version)"
-if [[ "$about_version" == "v0.19.0" ]]; then
-    pass "/api/v1/about reports version v0.19.0"
+if [[ "$expected_version" == "vUNREADABLE" ]]; then
+    fail "could not read upstreamVersion from CloudronManifest.json; an unreadable expectation is not a pass"
+elif [[ "$about_version" == "$expected_version" ]]; then
+    pass "/api/v1/about reports version $expected_version (from CloudronManifest.json upstreamVersion)"
 else
-    fail "/api/v1/about reported version '$about_version', expected v0.19.0"
+    fail "/api/v1/about reported version '$about_version', manifest upstreamVersion says '$expected_version'"
 fi
 
 # --- init: tini must be PID 1 for the WHOLE boot, not just for uvicorn ------
