@@ -42,7 +42,7 @@ The manifest carrying the new `healthCheckPath` has been applied to a real insta
 has polled it: the install's own "wait for health check" phase completed against
 `/api/v1/public/server_settings`, and the platform's stored manifest and reported state read back as
 
-```
+```text
 healthCheckPath : /api/v1/public/server_settings
 version         : 0.1.1
 memoryLimit     : 1610612736 (1.50 GiB)

@@ -49,7 +49,7 @@ browser session; see [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
 2. Use the **Add custom app** dropdown and choose **Community app**.
 3. Paste the raw URL of this package's `CloudronVersions.json`:
 
-   ```
+   ```text
    https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/CloudronVersions.json
    ```
 
@@ -63,7 +63,7 @@ from the official App Store.
 
 With the `cloudron` CLI installed and logged in to the target Cloudron instance:
 
-```
+```bash
 cloudron install \
   --versions-url https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/CloudronVersions.json \
   --location endurain.example.com
@@ -104,7 +104,7 @@ endpoint below is the exception: it authenticates with the key alone.
 API keys, created under **Settings, API keys**, let devices and companion apps upload activities
 without a browser session. Point Gadgetbridge, OpenTracks, FitoTrack or similar at:
 
-```
+```text
 https://endurain.example.com/api/v1/activities/create/upload
 ```
 
@@ -160,7 +160,7 @@ normal traffic after a restore.
 The published image is not a repackage of an upstream container; it is built from Endurain's source
 at a pinned tag, onto `cloudron/base`. The build is exercised with rootless `podman`:
 
-```
+```bash
 podman build \
   --build-arg ENDURAIN_VERSION=0.19.0 \
   --build-arg ENDURAIN_COMMIT=bc88c2a72c286e1dc1eae636ef14550b696c3fe2 \

@@ -21,7 +21,7 @@ synced folder, in the meantime.
 For any client that does upload directly, create an API key in Endurain first, under **Settings,
 API keys**, then point the client at the upload endpoint:
 
-```
+```text
 https://endurain.example.com/api/v1/activities/create/upload
 ```
 

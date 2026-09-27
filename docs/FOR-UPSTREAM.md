@@ -86,7 +86,7 @@ Forty-eight uploads of a 2000-point GPX file, six at a time through
 `POST /api/v1/activities/create/upload`, left the application permanently unable to serve any request
 that needs a database session. Inspecting the database during the failure:
 
-```
+```text
 connections to app db: 46
   active               1
   idle                 3
