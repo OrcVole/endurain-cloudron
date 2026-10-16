@@ -83,15 +83,15 @@ Nothing is bundled; no `persistentDirs`, no `backupCommand`.
 - **Frontend runtime config**: `FRONTEND_DIR=/run/endurain/frontend`, a per-boot
   symlink farm over the read-only built dist with real copies of `index.html` and
   `env.js`, reproducing upstream's env.js write and CSP connect-src rewrite
-  (`https://codeberg.org` stays allow-listed for the SPA's update check; documented).
+  (`https://api.github.com` stays allow-listed for the SPA's update check; documented).
 
 ## Pinned upstream
 
-- `cloudron/base:5.0.0@sha256:04fd70dbd8ad6149c19de39e35718e024417c3e01dc9c6637eaf4a41ec4e596c`
-- Endurain `v0.19.0`, commit `bc88c2a72c286e1dc1eae636ef14550b696c3fe2`, AGPL-3.0-or-later,
-  from `https://codeberg.org/endurain-project/endurain.git`
-- uv `0.11.18` (project-pinned), tarball sha256
-  `588f3e360f69ce02b6982aa99f2240e803933a6b7e176ac01617830adf955add`
+- `docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b`
+- Endurain `v0.19.3`, commit `29e0b5ef8ccd0f5636c71000b491dc55105aebc1`, AGPL-3.0-or-later,
+  from `https://github.com/endurain-project/endurain.git` (upstream moved from Codeberg in 0.19.3)
+- uv `0.12.23` (project-pinned), tarball sha256
+  `9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6`
 - Node `24.15.0`, builder stage only, from
   `https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz`, tarball sha256
   `472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6`. Not supplied by

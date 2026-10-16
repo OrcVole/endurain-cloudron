@@ -223,10 +223,9 @@ else
   # print how many key files were found versus how many are pinned. A glob such as ssh_host_*_key
   # would silently pass a real future leak; a count that does not match fails loudly. Re-verify the
   # hashes whenever the base image digest changes.
+  # cloudron/base 6.0.0 ships NO host keys (measured 2026-10-16: 0 found), so nothing is pinned.
+  # Base 5.0.0's three keys were removed with the move; any key that appears now is a finding.
   declare -A PINNED_SSH=(
-    [/etc/ssh/ssh_host_ecdsa_key]=677458f83d985da3fd7cdd208e90e4eac09da5be205425a5f96a6242dc985c33
-    [/etc/ssh/ssh_host_ed25519_key]=0c575ce8d9ba487b05cc473fad4b0650fb950181028e6ac19796f86f56f22a7a
-    [/etc/ssh/ssh_host_rsa_key]=ae0ea8087e90baf138d277ca52b6cf47b5010adc0e5bd84236713eee1b85de85
   )
   ssh_listing="$("$CRI" run --rm --user 0 "${RUNFLAGS[@]}" --entrypoint /bin/bash "$IMAGE" \
                   -c 'for f in /etc/ssh/ssh_host_*_key; do [ -e "$f" ] && sha256sum "$f"; done' 2>/dev/null)"

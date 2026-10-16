@@ -13,16 +13,16 @@
 # venv/interpreter pair, build the frontend with the base image's own
 # Node 24, and gate all of it before anything is copied forward.
 
-FROM cloudron/base:5.0.0@sha256:04fd70dbd8ad6149c19de39e35718e024417c3e01dc9c6637eaf4a41ec4e596c AS builder
+FROM docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b AS builder
 
-ARG ENDURAIN_VERSION=0.19.2
-ARG ENDURAIN_COMMIT=2d8a1aa7e1048e428e17840a41245537f8cda9aa
+ARG ENDURAIN_VERSION=0.19.3
+ARG ENDURAIN_COMMIT=29e0b5ef8ccd0f5636c71000b491dc55105aebc1
 
 # Build-only OS packages. git/curl/ca-certificates/tar fetch and verify
 # upstream and the pinned uv release. The compiler toolchain mirrors
 # upstream's own requirements-stage apt list (docker/Dockerfile:
 # build-base pkgconfig musl-dev python3-dev libffi-dev openssl-dev gcc),
-# translated from Alpine package names to this image's Ubuntu 24.04 base,
+# translated from Alpine package names to this image's Ubuntu 26.04 base,
 # in case uv ever has to build a dependency from an sdist rather than
 # pulling a prebuilt wheel.
 RUN apt-get update \
@@ -46,7 +46,7 @@ RUN apt-get update \
 # `v0.19.0` on https://codeberg.org/endurain-project/endurain.git resolves
 # to exactly bc88c2a72c286e1dc1eae636ef14550b696c3fe2.
 RUN git clone --depth 1 --branch "v${ENDURAIN_VERSION}" \
-        https://codeberg.org/endurain-project/endurain.git /build/upstream \
+        https://github.com/endurain-project/endurain.git /build/upstream \
  && cd /build/upstream \
  && resolved_commit="$(git rev-parse HEAD)" \
  && if [ "$resolved_commit" != "$ENDURAIN_COMMIT" ]; then \
@@ -55,22 +55,22 @@ RUN git clone --depth 1 --branch "v${ENDURAIN_VERSION}" \
     fi \
  && echo "==> verified upstream v${ENDURAIN_VERSION} at commit ${resolved_commit}"
 
-# Fetch uv EXACTLY 0.11.18. backend/pyproject.toml pins
-# [tool.uv] required-version = "0.11.18" and uv refuses to run at all
+# Fetch uv EXACTLY 0.12.23. backend/pyproject.toml pins
+# [tool.uv] required-version = "0.12.23" and uv refuses to run at all
 # inside that tree under any other version, so the build tool itself has
 # to match before anything else happens. The tarball sha256 below was
 # independently reproduced (not merely copied) by downloading this exact
 # URL and hashing it.
 RUN curl -fsSL -o /tmp/uv.tar.gz \
-        https://github.com/astral-sh/uv/releases/download/0.11.18/uv-x86_64-unknown-linux-gnu.tar.gz \
- && echo "588f3e360f69ce02b6982aa99f2240e803933a6b7e176ac01617830adf955add  /tmp/uv.tar.gz" | sha256sum -c - \
+        https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-unknown-linux-gnu.tar.gz \
+ && echo "9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6  /tmp/uv.tar.gz" | sha256sum -c - \
  && tar -xzf /tmp/uv.tar.gz -C /tmp \
  && install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv \
  && install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uvx /usr/local/bin/uvx \
  && rm -rf /tmp/uv.tar.gz /tmp/uv-x86_64-unknown-linux-gnu \
  && uv --version \
- && uv --version | grep -q '0\.11\.18' \
-        || { echo "==> build gate failed: uv --version did not report 0.11.18" >&2; exit 1; }
+ && uv --version | grep -q '0\.12\.23' \
+        || { echo "==> build gate failed: uv --version did not report 0.12.23" >&2; exit 1; }
 
 # uv-managed CPython and the synced venv both land under /app/code so the
 # tree copied into the runtime stage is self-contained: every interpreter
@@ -164,9 +164,9 @@ RUN test -s /app/code/frontend-dist/index.html \
 
 # -----------------------------------------------------------------------
 # Runtime stage.
-FROM cloudron/base:5.0.0@sha256:04fd70dbd8ad6149c19de39e35718e024417c3e01dc9c6637eaf4a41ec4e596c
+FROM docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b
 
-ARG ENDURAIN_VERSION=0.19.2
+ARG ENDURAIN_VERSION=0.19.3
 ENV ENDURAIN_VERSION=${ENDURAIN_VERSION}
 
 # Package revision, baked in so a RUNNING container can say which build it

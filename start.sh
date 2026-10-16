@@ -327,14 +327,14 @@ esac
 
 INDEX_HTML="$RUN_DIR/frontend/index.html"
 if [[ -n "$WS_ORIGIN" ]]; then
-    # https://codeberg.org stays allow-listed: it is the single-page app's
+    # https://api.github.com stays allow-listed: it is the single-page app's
     # build-time update-check origin (frontend/vite.config.ts), preserved
     # verbatim from the built default. connect-src is the LAST directive
     # in that build-time default, so the match below has to run to the
     # closing '"' of the meta content attribute, not to the next ';': the
     # built HTML encodes literal quotes as character references whose
     # trailing ';' would terminate the match early and corrupt the policy.
-    EXTERNAL_CONNECT="https://codeberg.org"
+    EXTERNAL_CONNECT="https://api.github.com"
     tmp_file="$(mktemp)"
     sed "s#connect-src [^\"]*#connect-src 'self' $API_ORIGIN $WS_ORIGIN $EXTERNAL_CONNECT#g" \
         "$INDEX_HTML" > "$tmp_file"

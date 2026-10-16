@@ -1,3 +1,8 @@
+[0.1.3]
+
+- Base image cloudron/base 5.0.0 to 6.0.0 (Ubuntu 26.04). No Node change: the frontend build already used its own pinned Node 24.15.0 in the builder stage, and the runtime ships no Node. Python is unchanged: the uv-managed CPython 3.13.13 is bundled, not the base's.
+- Upstream Endurain 0.19.2 to 0.19.3: dependency updates and maintenance; upstream moved from Codeberg to GitHub, so the package now builds from the GitHub repository (same commits for earlier tags) and the page's content security policy allows api.github.com for the in-app update check instead of codeberg.org. Build tool uv updated to 0.12.23 as upstream requires. No security items in the release notes.
+
 [0.1.2]
 
 - Update endurain 0.19.0 -> 0.19.2
