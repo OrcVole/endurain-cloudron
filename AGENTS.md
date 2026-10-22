@@ -87,14 +87,14 @@ Nothing is bundled; no `persistentDirs`, no `backupCommand`.
 
 ## Pinned upstream
 
-- `docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b`
-- Endurain `v0.19.3`, commit `29e0b5ef8ccd0f5636c71000b491dc55105aebc1`, AGPL-3.0-or-later,
+- `docker.io/cloudron/base:6.0.1@sha256:7b1e729960c3ca312d26e886917ba89483241bba0219ff292858e10d9d5768ee`
+- Endurain `v0.19.4`, commit `4eeb2cf47a88885155796f7c4dd7c9ec610913f5`, AGPL-3.0-or-later,
   from `https://github.com/endurain-project/endurain.git` (upstream moved from Codeberg in 0.19.3)
 - uv `0.12.23` (project-pinned), tarball sha256
   `9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6`
-- Node `24.15.0`, builder stage only, from
-  `https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz`, tarball sha256
-  `472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6`. Not supplied by
+- Node `24.22.1`, builder stage only, from
+  `https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz`, tarball sha256
+  `6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6`. Not supplied by
   `cloudron/base`, which ships Node 22.14.0: below upstream's declared floor, and with an
   npm too old to read upstream's lockfile.
 

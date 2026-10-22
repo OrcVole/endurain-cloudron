@@ -448,7 +448,7 @@ do not reproduce them.
 | --- | --- |
 | The venv and interpreter resolve on the runtime stage | `runtime import gate OK` in the build log |
 | The application's real module graph imports | `runtime app import gate OK`: `import main` builds the FastAPI app with every router |
-| Node is the pinned version | build fails unless `node --version` reports `v24.15.0` |
+| Node is the pinned version | build fails unless `node --version` reports `v24.22.1` |
 
 The application import gate was added after the panel observed that the named-module list covered
 eleven of the forty-seven declared runtime dependencies and never imported the application itself,

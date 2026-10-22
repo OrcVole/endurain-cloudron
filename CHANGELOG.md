@@ -1,3 +1,9 @@
+[0.1.4]
+
+- Base image cloudron/base 6.0.0 to 6.0.1: Ubuntu security updates, including the removal of the compromised eMudhra emSign ECC Root CA - G3 from the trusted certificates.
+- Upstream Endurain 0.19.3 to 0.19.4: the Strava visibility rule is now applied consistently across profile, activity and public views, including activity laps, sets and workout steps; activity files can be selected in the file picker on iOS. No security items in the release notes.
+- The frontend build's Node.js (builder stage only; the runtime ships no Node) moves from 24.15.0 to 24.22.1, the 2026-10-20 security release.
+
 [0.1.3]
 
 - Base image cloudron/base 5.0.0 to 6.0.0 (Ubuntu 26.04). No Node change: the frontend build already used its own pinned Node 24.15.0 in the builder stage, and the runtime ships no Node. Python is unchanged: the uv-managed CPython 3.13.13 is bundled, not the base's.

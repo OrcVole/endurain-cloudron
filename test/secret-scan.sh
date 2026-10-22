@@ -223,7 +223,7 @@ else
   # print how many key files were found versus how many are pinned. A glob such as ssh_host_*_key
   # would silently pass a real future leak; a count that does not match fails loudly. Re-verify the
   # hashes whenever the base image digest changes.
-  # cloudron/base 6.0.0 ships NO host keys (measured 2026-10-16: 0 found), so nothing is pinned.
+  # cloudron/base 6.0.0 and 6.0.1 ship NO host keys (measured 2026-10-16 and 2026-10-22: 0 found), so nothing is pinned.
   # Base 5.0.0's three keys were removed with the move; any key that appears now is a finding.
   declare -A PINNED_SSH=(
   )

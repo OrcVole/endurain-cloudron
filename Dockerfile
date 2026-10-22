@@ -13,10 +13,10 @@
 # venv/interpreter pair, build the frontend with the base image's own
 # Node 24, and gate all of it before anything is copied forward.
 
-FROM docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b AS builder
+FROM docker.io/cloudron/base:6.0.1@sha256:7b1e729960c3ca312d26e886917ba89483241bba0219ff292858e10d9d5768ee AS builder
 
-ARG ENDURAIN_VERSION=0.19.3
-ARG ENDURAIN_COMMIT=29e0b5ef8ccd0f5636c71000b491dc55105aebc1
+ARG ENDURAIN_VERSION=0.19.4
+ARG ENDURAIN_COMMIT=4eeb2cf47a88885155796f7c4dd7c9ec610913f5
 
 # Build-only OS packages. git/curl/ca-certificates/tar fetch and verify
 # upstream and the pinned uv release. The compiler toolchain mirrors
@@ -141,15 +141,15 @@ RUN /app/code/venv/bin/python -c "import fastapi, sqlalchemy, alembic, psycopg, 
 # bundled npm 11 handles the lockfile as upstream intends. The runtime
 # stage never needs node: uvicorn serves the built static dist.
 RUN curl -fsSL -o /tmp/node.tar.xz \
-        https://nodejs.org/dist/v24.15.0/node-v24.15.0-linux-x64.tar.xz \
- && echo "472655581fb851559730c48763e0c9d3bc25975c59d518003fc0849d3e4ba0f6  /tmp/node.tar.xz" | sha256sum -c - \
+        https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz \
+ && echo "6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6  /tmp/node.tar.xz" | sha256sum -c - \
  && mkdir -p /usr/local/node24 \
  && tar -xJf /tmp/node.tar.xz -C /usr/local/node24 --strip-components=1 \
  && rm /tmp/node.tar.xz
 ENV PATH=/usr/local/node24/bin:$PATH
 RUN node --version && npm --version \
- && node --version | grep -qx 'v24\.15\.0' \
-        || { echo "==> build gate failed: node --version did not report v24.15.0" >&2; exit 1; }
+ && node --version | grep -qx 'v24\.22\.1' \
+        || { echo "==> build gate failed: node --version did not report v24.22.1" >&2; exit 1; }
 
 WORKDIR /build/upstream/frontend
 RUN npm ci && npm run build \
@@ -164,9 +164,9 @@ RUN test -s /app/code/frontend-dist/index.html \
 
 # -----------------------------------------------------------------------
 # Runtime stage.
-FROM docker.io/cloudron/base:6.0.0@sha256:9bed4c8fa880645f8e669041ee28febe941481d00e9445e3e5a5483cb541d09b
+FROM docker.io/cloudron/base:6.0.1@sha256:7b1e729960c3ca312d26e886917ba89483241bba0219ff292858e10d9d5768ee
 
-ARG ENDURAIN_VERSION=0.19.3
+ARG ENDURAIN_VERSION=0.19.4
 ENV ENDURAIN_VERSION=${ENDURAIN_VERSION}
 
 # Package revision, baked in so a RUNNING container can say which build it
