@@ -1,3 +1,7 @@
+[0.2.1]
+
+- Email fix: on installs whose mail certificate carries no name that resolves inside the app's container (for example a wildcard for the primary domain whose public address does not accept mail connections), 0.2.0 left email disabled. The app now still connects to the mail server by its internal name and verifies the certificate against a name the certificate genuinely carries (the concrete name, or "my." under a wildcard). Certificate and hostname verification stay fully on. The boot log now says which host mail connects to and which name it verifies against, or that email is disabled and why. Installs where email already worked are unaffected.
+
 [0.2.0]
 
 - Upstream Endurain 0.19.4 to 0.20.1. Security: fixes six advisories, two of them High. GHSA-69pf-842h-jm7g (High): route-map thumbnails and user photos were served without authentication; they now come only from signed, expiring URLs. GHSA-5pxq-cv3v-89qg (High): the Strava OAuth callback allowed an integration to be hijacked by stealing the state value. GHSA-xqfv-wgw6-xf2x (Medium): activity streams, laps, sets and workout steps were readable by any signed-in user. GHSA-jwrv-j6hh-fw3c (Medium): the activity hide_* privacy flags were not enforced in API responses. GHSA-464j-c746-pg75 (Medium): rate limiting could be bypassed with an arbitrary Bearer header. GHSA-7mf8-q8fp-38x8 (Medium): a missing ownership check let users attach activities to another user's gear.

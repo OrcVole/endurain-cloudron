@@ -198,8 +198,9 @@ COPY --from=builder /app/code/frontend-dist /app/code/frontend-dist
 COPY start.sh /app/code/start.sh
 COPY provision.py /app/code/provision.py
 COPY mailhost.py /app/code/mailhost.py
+COPY mailtls.py /app/code/venv/lib/python3.13/site-packages/sitecustomize.py
 RUN chmod 0755 /app/code/start.sh \
- && chmod 0644 /app/code/provision.py /app/code/mailhost.py
+ && chmod 0644 /app/code/provision.py /app/code/mailhost.py /app/code/venv/lib/python3.13/site-packages/sitecustomize.py
 
 # Runtime-stage import gate: proves the copied venv/python pair still
 # resolves and imports correctly on this stage, outside the builder, with

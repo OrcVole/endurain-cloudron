@@ -198,20 +198,35 @@ export JOBS_ENABLED=true
 # server's certificate covers, and the addon's own host name ("mail") is not
 # one. mailhost.py finds a name that resolves in this container and completes
 # a verified STARTTLS handshake; if none does, email stays off and says why.
+# When no candidate resolves AND verifies, mailhost.py falls back to connecting
+# to the addon host ("mail") and verifying against a name the certificate does
+# carry; it then prints "<host> <tls name>" and mailtls.py (the venv's
+# sitecustomize) substitutes that name for that one host. Verification stays on.
 if [[ -n "${CLOUDRON_MAIL_SMTP_SERVER:-}" ]]; then
-    if mail_name="$("$VENV_PYTHON" /app/code/mailhost.py)" && [[ -n "$mail_name" ]]; then
+    unset ENDURAIN_MAIL_TLS_FOR_HOST ENDURAIN_MAIL_TLS_SERVER_NAME
+    mail_name=""; mail_tls_name=""
+    if mail_out="$("$VENV_PYTHON" /app/code/mailhost.py)" && [[ -n "$mail_out" ]]; then
+        read -r mail_name mail_tls_name <<<"$mail_out"
+    fi
+    if [[ -n "$mail_name" ]]; then
         export SMTP_HOST="$mail_name"
         export SMTP_PORT="$CLOUDRON_MAIL_STARTTLS_PORT"
         export SMTP_USERNAME="$CLOUDRON_MAIL_SMTP_USERNAME"
         export SMTP_PASSWORD="$CLOUDRON_MAIL_SMTP_PASSWORD"
         export SMTP_FROM="$CLOUDRON_MAIL_FROM"
         export SMTP_SECURE=true
-        log "SMTP configured via the sendmail addon (host=$SMTP_HOST port=$SMTP_PORT, STARTTLS with verified certificate)"
+        if [[ -n "$mail_tls_name" ]]; then
+            export ENDURAIN_MAIL_TLS_FOR_HOST="$mail_name"
+            export ENDURAIN_MAIL_TLS_SERVER_NAME="$mail_tls_name"
+            log "mail: connecting to $SMTP_HOST:$SMTP_PORT, STARTTLS, certificate verified against $mail_tls_name (name carried by the certificate)"
+        else
+            log "mail: connecting to $SMTP_HOST:$SMTP_PORT, STARTTLS, certificate verified against $SMTP_HOST"
+        fi
     else
-        log "WARNING: no name for the mail server passed a verified STARTTLS handshake; email is disabled"
+        log "mail: email is DISABLED: no name for the mail server passed a verified STARTTLS handshake (see the mailhost line above for why)"
     fi
 else
-    log "sendmail addon not configured (CLOUDRON_MAIL_SMTP_SERVER unset); email disabled"
+    log "mail: email is DISABLED: sendmail addon not configured (CLOUDRON_MAIL_SMTP_SERVER unset)"
 fi
 
 export ENDURAIN_HOST="$CLOUDRON_APP_ORIGIN"

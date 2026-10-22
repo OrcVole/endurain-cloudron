@@ -6,9 +6,9 @@
   "description": "file://DESCRIPTION.md",
   "changelog": "file://CHANGELOG.md",
   "icon": "file://logo.png",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "upstreamVersion": "0.20.1",
-  "dockerImage": "ghcr.io/orcvole/endurain-cloudron@sha256:0a0de85cd69771a4c3f233ea8dc46739a84d42a8c44e22bd927f3c50c6a18018",
+  "dockerImage": "ghcr.io/orcvole/endurain-cloudron@sha256:4cf618dd2602950b9049fcfa42e3b704b648ad0344f655f0bd48c3ac9799f31c",
   "healthCheckPath": "/api/v1/public/server_settings",
   "httpPort": 8080,
   "addons": {
