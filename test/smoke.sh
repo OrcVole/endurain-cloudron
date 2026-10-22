@@ -300,7 +300,7 @@ access_token="$(json_field "$good_login_file" access_token)"
 # core/middleware.py's CSRFMiddleware demands an X-CSRF-Token header on
 # every POST/PUT/DELETE/PATCH whose X-Client-Type is "web", except for a
 # short exempt-path list (login, mfa/verify, refresh, password-reset,
-# sign-up, the public idp session endpoint). /activities/create/upload is
+# sign-up, the public idp session endpoint). /activities/upload is
 # not on that list, so sending X-Client-Type: web without also sending the
 # matching X-CSRF-Token would 403 rather than exercise the upload path.
 csrf_token="$(json_field "$good_login_file" csrf_token)"
@@ -319,36 +319,57 @@ else
 fi
 
 # --- the dlopen-class gate: upload a real GPX file and see it parsed -------
+# Since 0.20 the upload route is POST /activities/upload (the old
+# /activities/create/upload is gone). It answers 202 with an ingestion job;
+# the file is parsed by a durable job, so poll
+# GET /activities/ingestion-jobs/{id} until it ends and only then expect the
+# activity in the list. The list route is GET /activities/users/{user_id} and
+# returns a paginated envelope {items,total,page,num_records,next}.
 upload_file="$SCRATCH_DIR/upload.json"
 upload_status="$(curl -sS -o "$upload_file" -w '%{http_code}' \
-    -X POST "$ORIGIN/api/v1/activities/create/upload" \
+    -X POST "$ORIGIN/api/v1/activities/upload" \
     -H "Authorization: Bearer ${access_token}" \
     -H 'X-Client-Type: web' \
     -H "X-CSRF-Token: ${csrf_token}" \
     -F "file=@${FIXTURES_DIR}/tiny.gpx;type=application/gpx+xml;filename=tiny.gpx")"
-if [[ "$upload_status" =~ ^2[0-9][0-9]$ ]]; then
-    pass "tiny.gpx upload returned $upload_status"
+if [[ "$upload_status" == "202" ]]; then
+    pass "tiny.gpx upload returned 202 (accepted as an ingestion job)"
 else
-    fail "tiny.gpx upload returned $upload_status, expected 2xx ($(cat "$upload_file" 2>/dev/null))"
+    fail "tiny.gpx upload returned $upload_status, expected 202 ($(cat "$upload_file" 2>/dev/null))"
+fi
+job_id="$(json_field "$upload_file" id)"
+job_state=""
+for _ in $(seq 1 60); do
+    job_file="$SCRATCH_DIR/job.json"
+    curl -sS -o "$job_file" "$ORIGIN/api/v1/activities/ingestion-jobs/${job_id}" \
+        -H "Authorization: Bearer ${access_token}" -H 'X-Client-Type: web' >/dev/null 2>&1
+    job_state="$(json_field "$job_file" status)"
+    case "$job_state" in completed|failed) break ;; esac
+    sleep 1
+done
+if [[ "$job_state" == "completed" ]]; then
+    pass "the ingestion job for tiny.gpx completed"
+else
+    fail "the ingestion job for tiny.gpx ended as '${job_state:-<unknown>}' ($(cat "$job_file" 2>/dev/null))"
 fi
 
 list_file="$SCRATCH_DIR/activities.json"
 list_status="$(curl -sS -o "$list_file" -w '%{http_code}' \
-    "$ORIGIN/api/v1/activities/user/${user_id}/page_number/1/num_records/10" \
+    "$ORIGIN/api/v1/activities/users/${user_id}?page_number=1&num_records=10" \
     -H "Authorization: Bearer ${access_token}" \
     -H 'X-Client-Type: web')"
 activity_count="$(python3 -c "
 import json, sys
 try:
     data = json.load(open(sys.argv[1]))
-    print(len(data) if isinstance(data, list) else 0)
+    print(data.get('total', 0) if isinstance(data, dict) else 0)
 except Exception:
     print(0)
 " "$list_file" 2>/dev/null)"
 if [[ "$list_status" == "200" && "${activity_count:-0}" -ge 1 ]]; then
     pass "activities list shows $activity_count activity/activities after the upload"
 else
-    fail "activities list check failed (status=$list_status count=${activity_count:-0})"
+    fail "activities list check failed (status=$list_status total=${activity_count:-0}): $(head -c 200 "$list_file" 2>/dev/null)"
 fi
 
 # --- secret file ownership, mode and byte-identity across a restart --------
@@ -394,8 +415,11 @@ else
 fi
 
 restart_logs="$(podman logs "$APP_CONTAINER" 2>&1)"
-if printf '%s\n' "$restart_logs" | grep -q "existing secret found: secret-key" \
-    && printf '%s\n' "$restart_logs" | grep -q "existing secret found: fernet-key"; then
+# Here-strings, not `printf | grep -q`: under pipefail, grep -q exits at the first match,
+# printf then dies of SIGPIPE on a log this large (0.20 logs far more at start-up), and the
+# pipeline reports failure for a log that does contain the line.
+if grep -q "existing secret found: secret-key" <<<"$restart_logs" \
+    && grep -q "existing secret found: fernet-key" <<<"$restart_logs"; then
     pass "logs show the existing-secret branch after restart, for both keys"
 else
     fail "logs do not show the existing-secret branch after restart for both keys"
@@ -418,15 +442,15 @@ fernet_key_value="$(podman exec "$APP_CONTAINER" cat /app/data/.secrets/fernet-k
 full_logs="$(podman logs "$APP_CONTAINER" 2>&1)"
 
 secret_leaked=0
-if [[ -n "$admin_password" ]] && printf '%s\n' "$full_logs" | grep -qF -- "$admin_password"; then
+if [[ -n "$admin_password" ]] && grep -qF -- "$admin_password" <<<"$full_logs"; then
     fail "the generated admin password appears in container logs"
     secret_leaked=1
 fi
-if [[ -n "$secret_key_value" ]] && printf '%s\n' "$full_logs" | grep -qF -- "$secret_key_value"; then
+if [[ -n "$secret_key_value" ]] && grep -qF -- "$secret_key_value" <<<"$full_logs"; then
     fail "the secret-key value appears in container logs"
     secret_leaked=1
 fi
-if [[ -n "$fernet_key_value" ]] && printf '%s\n' "$full_logs" | grep -qF -- "$fernet_key_value"; then
+if [[ -n "$fernet_key_value" ]] && grep -qF -- "$fernet_key_value" <<<"$full_logs"; then
     fail "the fernet-key value appears in container logs"
     secret_leaked=1
 fi

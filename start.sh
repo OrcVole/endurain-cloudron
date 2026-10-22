@@ -175,29 +175,41 @@ export DB_USER="$CLOUDRON_POSTGRESQL_USERNAME"
 export DB_PASSWORD="$CLOUDRON_POSTGRESQL_PASSWORD"
 export DB_DATABASE="$CLOUDRON_POSTGRESQL_DATABASE"
 
-# core/redis.py's is_redis_storage_uri() accepts a bare "redis://" (or
-# "rediss://"/"unix://") prefix and hands the whole URI straight to
-# Redis.from_url(). CLOUDRON_REDIS_URL already arrives in exactly that
-# form, redis://:PASSWORD@HOST:PORT, so it is passed through unchanged.
-export RATE_LIMIT_STORAGE_URI="$CLOUDRON_REDIS_URL"
-export AUTH_SECURITY_STORAGE_URI="$CLOUDRON_REDIS_URL"
+# The redis addon backs the application's shared state store (rate-limit
+# counters, auth lockout, pending-MFA and websocket tickets), so a lockout
+# survives a restart as it did in 0.19.x. Upstream 0.20 removed
+# RATE_LIMIT_STORAGE_URI and AUTH_SECURITY_STORAGE_URI and REFUSES TO START if
+# either is present in the environment, so they must never be exported here.
+# STATE_URI takes the addon URL as it arrives (redis://:PASSWORD@HOST:PORT) and
+# needs the redis client, which the image carries via uv's `distributed` extra.
+# REDIS_URL is deliberately NOT set: it would also turn the redis streams on as
+# the event bus; the bus stays in-process.
+export STATE_URI="$CLOUDRON_REDIS_URL"
 
+# Durable uploads, imports and mail (an outbox in PostgreSQL, retried by an
+# in-process worker). Defaults to off upstream.
+export JOBS_ENABLED=true
+
+# Mail. Upstream 0.20 verifies TLS against SMTP_HOST (default certificate
+# store, hostname check) and refuses to send credentials without TLS, so the
+# plain relay port (2525) cannot be used with the addon's credentials; with
+# SMTP_SECURE=false and credentials it silently starts with email DISABLED.
+# The STARTTLS port can be used, but SMTP_HOST must be a name that the mail
+# server's certificate covers, and the addon's own host name ("mail") is not
+# one. mailhost.py finds a name that resolves in this container and completes
+# a verified STARTTLS handshake; if none does, email stays off and says why.
 if [[ -n "${CLOUDRON_MAIL_SMTP_SERVER:-}" ]]; then
-    export SMTP_HOST="$CLOUDRON_MAIL_SMTP_SERVER"
-    export SMTP_PORT="$CLOUDRON_MAIL_SMTP_PORT"
-    export SMTP_USERNAME="$CLOUDRON_MAIL_SMTP_USERNAME"
-    export SMTP_PASSWORD="$CLOUDRON_MAIL_SMTP_PASSWORD"
-    export SMTP_FROM="$CLOUDRON_MAIL_FROM"
-    # CLOUDRON_MAIL_SMTP_PORT is the sendmail addon's plain relay port,
-    # documented as having STARTTLS disabled (CLOUDRON_MAIL_SMTPS_PORT is
-    # the separate implicit-TLS port and is not used here). core/apprise.py's
-    # AppriseService._build_smtp_url() only switches to the "mailtos://"
-    # scheme and adds a "mode=" (starttls/ssl) parameter when SMTP_SECURE
-    # is true; SMTP_SECURE=false is therefore the combination that
-    # actually matches this port, a plain "mailto://" URL with no
-    # encryption negotiated.
-    export SMTP_SECURE=false
-    log "SMTP configured via the sendmail addon (host=$SMTP_HOST port=$SMTP_PORT)"
+    if mail_name="$("$VENV_PYTHON" /app/code/mailhost.py)" && [[ -n "$mail_name" ]]; then
+        export SMTP_HOST="$mail_name"
+        export SMTP_PORT="$CLOUDRON_MAIL_STARTTLS_PORT"
+        export SMTP_USERNAME="$CLOUDRON_MAIL_SMTP_USERNAME"
+        export SMTP_PASSWORD="$CLOUDRON_MAIL_SMTP_PASSWORD"
+        export SMTP_FROM="$CLOUDRON_MAIL_FROM"
+        export SMTP_SECURE=true
+        log "SMTP configured via the sendmail addon (host=$SMTP_HOST port=$SMTP_PORT, STARTTLS with verified certificate)"
+    else
+        log "WARNING: no name for the mail server passed a verified STARTTLS handshake; email is disabled"
+    fi
 else
     log "sendmail addon not configured (CLOUDRON_MAIL_SMTP_SERVER unset); email disabled"
 fi
@@ -348,7 +360,11 @@ fi
 chown -R -h cloudron:cloudron "$RUN_DIR/frontend"
 
 # --- migrations before serve -----------------------------------------------
-log "running database migrations"
+# Upstream 0.20 also runs its own schema bootstrap and the data migrations
+# (thumbnails to WebP, media and photo paths to storage keys) inside the
+# application's start-up, before uvicorn opens the port. After a major update
+# the health check therefore fails for a while; that is expected, not a crash.
+log "running database migrations (the application runs further data migrations at its own start-up, before the port opens)"
 if ! ( cd "$UP/app" && gosu cloudron:cloudron "$VENV_PYTHON" -m alembic upgrade head ); then
     fail "alembic upgrade head failed; refusing to start"
 fi

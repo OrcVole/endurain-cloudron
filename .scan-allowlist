@@ -12,3 +12,12 @@ Most+github@OrcadianVole.com
 # substring of a longer word. The bundles are built from upstream's locale files and contain no
 # estate content. Added 2026-09-02 while publishing 0.1.2.
 /app/code/frontend-dist/assets/virtual_intlify-i18n-
+
+# 0.2.0 (Endurain 0.20.1): upstream now emits some translations as per-page chunks instead of only the
+# virtual_intlify bundle above. The Finnish chunks for the activities page and the password-reset page
+# contain the same five-letter fragment of ordinary Finnish words that an identity denylist pattern matches
+# (found by matching each pattern against the file on 2026-10-22; not repeated here). Same
+# claim as above: upstream's own translation of its UI, no estate content. Prefixes, because the
+# chunk file names carry a content hash that changes every build.
+/app/code/frontend-dist/assets/activities-
+/app/code/frontend-dist/assets/resetPassword-

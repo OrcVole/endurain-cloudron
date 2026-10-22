@@ -35,21 +35,20 @@ from __future__ import annotations
 import os
 import secrets
 import sys
-from importlib import import_module
 from pathlib import Path
 
 # The app's own modules, importable because PYTHONPATH points at
 # backend/app (see start.sh's provisioning step).
 import sqlalchemy  # noqa: E402
 
-import auth.credentials.crud as auth_credentials_crud  # noqa: E402
-import auth.identity_providers.crud as idp_crud  # noqa: E402
-import auth.identity_providers.schema as idp_schema  # noqa: E402
-import auth.password_hasher as auth_password_hasher  # noqa: E402
+import modules.auth.credentials.crud as auth_credentials_crud  # noqa: E402
+import modules.auth.identity_providers.crud as idp_crud  # noqa: E402
+import modules.auth.identity_providers.schema as idp_schema  # noqa: E402
+import modules.auth._internal.password_hasher as auth_password_hasher  # noqa: E402
 import core.database as core_database  # noqa: E402
-import users.users.crud as users_crud  # noqa: E402
-import server_settings.models as server_settings_models  # noqa: E402
-import users.users.schema as users_schema  # noqa: E402
+import modules.users.users.crud as users_crud  # noqa: E402
+import modules.server_settings.models as server_settings_models  # noqa: E402
+import modules.users.users.schema as users_schema  # noqa: E402
 
 SECRETS_DIR = Path("/app/data/.secrets")
 MARKER_PATH = SECRETS_DIR / ".admin-provisioned"
@@ -65,26 +64,22 @@ _WELL_KNOWN_SUFFIX = "/.well-known/openid-configuration"
 
 
 def _import_all_models() -> None:
-    """Import every ``models.py`` so the ORM registry resolves completely.
+    """Import every ORM model so the SQLAlchemy registry resolves completely.
 
     SQLAlchemy configures a mapper lazily, on first use, and resolves the
     string targets of its ``relationship()`` declarations against the class
-    registry at that moment. ``Users`` declares a relationship to
-    ``PasswordResetToken``, so querying a user from a process that imported
-    only the handful of modules this script names directly raises
+    registry at that moment, so querying a user from a process that imported
+    only the modules this script names directly can raise
     ``InvalidRequestError: failed to locate a name``. The application never
-    hits this because ``main.py`` transitively imports the whole model tree
-    on the way to building its router.
+    hits this because ``main.py`` transitively imports the whole model tree.
 
-    This is upstream's own ``_import_all_models()`` from
-    ``backend/app/alembic/env.py``, reproduced rather than imported: that
-    module is an Alembic script which touches ``alembic.context`` and calls
-    ``fileConfig()`` at import time, neither of which is valid outside an
-    Alembic run. Keep the two in step at version bumps.
+    Since 0.20 upstream registers models through ``model_registry``, which
+    ``backend/app/alembic/env.py`` (line 25) calls the same way. Keep the two
+    in step at version bumps.
     """
-    app_dir = Path(core_database.__file__).resolve().parents[1]
-    for path in sorted(app_dir.glob("**/models.py")):
-        import_module(".".join(path.relative_to(app_dir).with_suffix("").parts))
+    import model_registry
+
+    model_registry.import_all_models()
 
 
 def _log(message: str) -> None:

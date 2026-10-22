@@ -15,8 +15,8 @@
 
 FROM docker.io/cloudron/base:6.0.1@sha256:7b1e729960c3ca312d26e886917ba89483241bba0219ff292858e10d9d5768ee AS builder
 
-ARG ENDURAIN_VERSION=0.19.4
-ARG ENDURAIN_COMMIT=4eeb2cf47a88885155796f7c4dd7c9ec610913f5
+ARG ENDURAIN_VERSION=0.20.1
+ARG ENDURAIN_COMMIT=f537651809e51a35799d95ef591c667b8596559f
 
 # Build-only OS packages. git/curl/ca-certificates/tar fetch and verify
 # upstream and the pinned uv release. The compiler toolchain mirrors
@@ -55,22 +55,22 @@ RUN git clone --depth 1 --branch "v${ENDURAIN_VERSION}" \
     fi \
  && echo "==> verified upstream v${ENDURAIN_VERSION} at commit ${resolved_commit}"
 
-# Fetch uv EXACTLY 0.12.23. backend/pyproject.toml pins
-# [tool.uv] required-version = "0.12.23" and uv refuses to run at all
+# Fetch uv EXACTLY 0.12.24. backend/pyproject.toml pins
+# [tool.uv] required-version = "0.12.24" and uv refuses to run at all
 # inside that tree under any other version, so the build tool itself has
 # to match before anything else happens. The tarball sha256 below was
 # independently reproduced (not merely copied) by downloading this exact
 # URL and hashing it.
 RUN curl -fsSL -o /tmp/uv.tar.gz \
-        https://github.com/astral-sh/uv/releases/download/0.12.23/uv-x86_64-unknown-linux-gnu.tar.gz \
- && echo "9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6  /tmp/uv.tar.gz" | sha256sum -c - \
+        https://github.com/astral-sh/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz \
+ && echo "b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6  /tmp/uv.tar.gz" | sha256sum -c - \
  && tar -xzf /tmp/uv.tar.gz -C /tmp \
  && install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uv /usr/local/bin/uv \
  && install -m 0755 /tmp/uv-x86_64-unknown-linux-gnu/uvx /usr/local/bin/uvx \
  && rm -rf /tmp/uv.tar.gz /tmp/uv-x86_64-unknown-linux-gnu \
  && uv --version \
- && uv --version | grep -q '0\.12\.23' \
-        || { echo "==> build gate failed: uv --version did not report 0.12.23" >&2; exit 1; }
+ && uv --version | grep -q '0\.12\.24' \
+        || { echo "==> build gate failed: uv --version did not report 0.12.24" >&2; exit 1; }
 
 # uv-managed CPython and the synced venv both land under /app/code so the
 # tree copied into the runtime stage is self-contained: every interpreter
@@ -102,7 +102,11 @@ WORKDIR /build/upstream/backend
 # upstream's own Dockerfile achieves with `uv export --no-emit-project
 # --no-dev` (ADR 0001 chooses `uv sync --frozen` over that export-and-pip
 # mechanism, so the flags are mirrored in intent, not the literal command).
-RUN uv sync --frozen --no-install-project --no-dev --python 3.13.13
+# --extra distributed: pulls the redis client (and boto3/jasil[redis,s3]). The
+# package keeps the Cloudron redis addon as the app's shared STATE_URI store
+# (rate-limit counters, lockout, pending-MFA tickets survive a restart); it
+# never sets REDIS_URL, so the event bus stays in-process.
+RUN uv sync --frozen --no-install-project --no-dev --extra distributed --python 3.13.13
 
 # Assemble the runtime layout. Only backend/app (which contains
 # alembic.ini and the alembic/ package exactly as upstream has them,
@@ -127,7 +131,7 @@ RUN mkdir -p /app/code/upstream/backend \
 # against core/config.py's `from cryptography.fernet import Fernet`); and
 # PIL (Pillow, pulled in at runtime by the qrcode[pil] extra that
 # auth/mfa/service.py's `import qrcode` relies on for TOTP QR codes).
-RUN /app/code/venv/bin/python -c "import fastapi, sqlalchemy, alembic, psycopg, stravalib, garminconnect, fitdecode, gpxpy, tcxreader, cryptography.fernet, PIL; print('==> builder import gate OK')"
+RUN /app/code/venv/bin/python -c "import fastapi, sqlalchemy, alembic, psycopg, stravalib, garminconnect, fitdecode, gpxpy, tcxreader, cryptography.fernet, PIL, jasil, redis; print('==> builder import gate OK')"
 
 # --- Frontend toolchain. cloudron/base:5.0.0 at this digest ships ONLY
 # node 22.14.0 with npm 10.9.2 (verified 2026-08-01 by running the base
@@ -166,7 +170,7 @@ RUN test -s /app/code/frontend-dist/index.html \
 # Runtime stage.
 FROM docker.io/cloudron/base:6.0.1@sha256:7b1e729960c3ca312d26e886917ba89483241bba0219ff292858e10d9d5768ee
 
-ARG ENDURAIN_VERSION=0.19.4
+ARG ENDURAIN_VERSION=0.20.1
 ENV ENDURAIN_VERSION=${ENDURAIN_VERSION}
 
 # Package revision, baked in so a RUNNING container can say which build it
@@ -193,14 +197,15 @@ COPY --from=builder /app/code/frontend-dist /app/code/frontend-dist
 
 COPY start.sh /app/code/start.sh
 COPY provision.py /app/code/provision.py
+COPY mailhost.py /app/code/mailhost.py
 RUN chmod 0755 /app/code/start.sh \
- && chmod 0644 /app/code/provision.py
+ && chmod 0644 /app/code/provision.py /app/code/mailhost.py
 
 # Runtime-stage import gate: proves the copied venv/python pair still
 # resolves and imports correctly on this stage, outside the builder, with
 # the exact same module list as the builder-stage gate above, before
 # Cloudron ever starts a container from this image.
-RUN /app/code/venv/bin/python -c "import fastapi, sqlalchemy, alembic, psycopg, stravalib, garminconnect, fitdecode, gpxpy, tcxreader, cryptography.fernet, PIL; print('==> runtime import gate OK')"
+RUN /app/code/venv/bin/python -c "import fastapi, sqlalchemy, alembic, psycopg, stravalib, garminconnect, fitdecode, gpxpy, tcxreader, cryptography.fernet, PIL, jasil, redis; print('==> runtime import gate OK')"
 
 # The gate that actually covers the application. The named-module list above
 # is a hand-picked eleven out of the forty-seven runtime dependencies
@@ -215,7 +220,7 @@ RUN /app/code/venv/bin/python -c "import fastapi, sqlalchemy, alembic, psycopg, 
 # scheduler (that happens in the lifespan handler, not at import). The
 # placeholder secrets exist only to satisfy config validation and never reach
 # the image; the path overrides keep core/config.py's import-time mkdir out
-# of /app, and the temporary tree is removed in the same layer. The two
+# of /app, and the temporary tree is removed in the same layer. The
 # storage-URI warnings this prints are the expected result of running without
 # the redis addon present, not a fault.
 RUN set -eu; \

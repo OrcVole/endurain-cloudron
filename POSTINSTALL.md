@@ -24,11 +24,21 @@ Endurain accepts FIT, GPX and TCX uploads. For automatic upload from Gadgetbridg
 OpenTracks, FitoTrack and similar, create an API key in Endurain (Settings, API keys)
 and point the app at:
 
-`$CLOUDRON-APP-ORIGIN/api/v1/activities/create/upload`
+`$CLOUDRON-APP-ORIGIN/api/v1/activities/upload`
 
-with the key in the `X-API-Key` header; that endpoint needs no other header. Clients
+with the key in the `X-API-Key` header; that endpoint needs no other header. The route
+changed in Endurain 0.20: **every device client must be re-pointed from the old
+`/api/v1/activities/create/upload` to this one**, and some companion apps may not know the new route
+yet. The upload now answers `202` and imports in the background. Clients
 that sign in to the wider JSON API (rather than using an API key) must send
 `X-Client-Type: mobile` on their requests, including login.
+
+## Importing from the server's disk
+
+Bulk and Strava-export imports from disk now use one folder per user, in the Cloudron File manager
+under `storage/activity_files/bulk_import/<user id>/` (Strava exports: `.../strava_import/<user id>/`),
+or upload the archive on Endurain's Import page. Files left in the old, shared `bulk_import` folder
+are no longer picked up: move them.
 
 ## Integrations
 

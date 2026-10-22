@@ -204,6 +204,57 @@
             "creationDate": "Thu, 22 Oct 2026 17:33:47 GMT",
             "ts": 1792690427000,
             "publishState": "published"
+        },
+        "0.2.0": {
+            "manifest": {
+                "id": "io.github.orcvole.endurain",
+                "title": "Endurain",
+                "author": "OrcVole",
+                "tagline": "Self-hosted fitness tracking for endurance sports",
+                "description": "<upstream>0.20.1</upstream>\n\nEndurain is a self-hosted fitness tracking platform for endurance sports: running,\ncycling, hiking, swimming, gym work and more. Upload activities as FIT, GPX or TCX\nfiles, sync automatically from Strava and Garmin Connect, follow other users, track\nbody composition and health data, and keep every GPS track and heart-rate stream on\nyour own server.\n\nThis package runs Endurain on Cloudron with:\n\n- PostgreSQL, Redis and outgoing email provided by Cloudron addons, so backups and\n  updates are handled by the platform.\n- Optional Cloudron single sign-on through Endurain's native OpenID Connect support.\n  Local accounts keep working either way.\n- The upstream seeded `admin` account is protected on first run: this package replaces\n  the well-known default password with a generated one before the app ever serves a\n  request (see the post-install message).\n- Long-lived API keys (an Endurain feature since 0.18.0) let devices and apps such as\n  Gadgetbridge, OpenTracks or FitoTrack upload activities directly to your instance.\n\nEndurain is developed by the Endurain project (<https://endurain.com>), licensed\nAGPL-3.0-or-later. This is an unofficial community package; \"Endurain\" is a registered\ntrademark of its author, used here nominatively for a free, non-commercial community\npackage in line with the project's trademark policy.\n",
+                "changelog": "- Upstream Endurain 0.19.4 to 0.20.1. Security: fixes six advisories, two of them High. GHSA-69pf-842h-jm7g (High): route-map thumbnails and user photos were served without authentication; they now come only from signed, expiring URLs. GHSA-5pxq-cv3v-89qg (High): the Strava OAuth callback allowed an integration to be hijacked by stealing the state value. GHSA-xqfv-wgw6-xf2x (Medium): activity streams, laps, sets and workout steps were readable by any signed-in user. GHSA-jwrv-j6hh-fw3c (Medium): the activity hide_* privacy flags were not enforced in API responses. GHSA-464j-c746-pg75 (Medium): rate limiting could be bypassed with an arbitrary Bearer header. GHSA-7mf8-q8fp-38x8 (Medium): a missing ownership check let users attach activities to another user's gear.\n- WARNING, one-way migration: the first start on 0.20 migrates the database and the files under /app/data and cannot be undone by downgrading. Thumbnails are converted from PNG to WebP and the PNG files are deleted; activity media and user photo records are rewritten, and a record whose file is missing is removed. Cloudron takes a backup before the update; restoring that backup is the only way back. The application is unhealthy while the migration runs, which grows with the number of activities, so expect a pause after the update rather than an instant start.\n- ACTION REQUIRED for device clients: the upload route is now POST /api/v1/activities/upload (it answers 202 and imports in the background). The old /api/v1/activities/create/upload no longer exists. Re-point Gadgetbridge, OpenTracks, FitoTrack and any other client; some companion apps may not support the new route yet, so check before updating if you rely on them.\n- ACTION REQUIRED for imports from disk: bulk and Strava-export folders are now per user, under storage/activity_files/bulk_import/<user id>/ and strava_import/<user id>/ (or upload the archive on the Import page). Files left in the old shared folders are not picked up.\n- Email: upstream replaced its mail library and now verifies the mail server's certificate and refuses to send credentials without TLS, which would have silently disabled email with the previous wiring. Mail now goes over STARTTLS on the sendmail addon's STARTTLS port with the addon credentials and a verified certificate; the host name is worked out at boot (see mailhost.py) and the boot log says if email had to be left off. Only the newest password-reset link works, and mail is sent in the background, so the API no longer reports delivery failures.\n- Background jobs are enabled (JOBS_ENABLED=true): uploads, imports and email are queued durably in PostgreSQL and retried.\n- The Redis addon is kept, now as the application's shared state store (STATE_URI) so rate-limit and lockout state still survives a restart; the Redis event bus is not used. Build tool uv 0.12.23 to 0.12.24 as upstream requires; the image now installs upstream's distributed extra for the Redis client.\n- Packaging: the provisioning script follows upstream's move of its code under modules/; the two environment variables upstream now refuses (RATE_LIMIT_STORAGE_URI, AUTH_SECURITY_STORAGE_URI) are no longer set. Base image (6.0.1) and the builder-only Node.js (24.22.1) are unchanged from 0.1.4.\n",
+                "icon": "file://logo.png",
+                "version": "0.2.0",
+                "upstreamVersion": "0.20.1",
+                "dockerImage": "ghcr.io/orcvole/endurain-cloudron@sha256:0a0de85cd69771a4c3f233ea8dc46739a84d42a8c44e22bd927f3c50c6a18018",
+                "healthCheckPath": "/api/v1/public/server_settings",
+                "httpPort": 8080,
+                "addons": {
+                    "localstorage": {},
+                    "postgresql": {},
+                    "redis": {},
+                    "sendmail": {},
+                    "oidc": {
+                        "loginRedirectUri": "/api/v1/public/idp/callback/cloudron"
+                    }
+                },
+                "optionalSso": true,
+                "memoryLimit": 1610612736,
+                "configurePath": "/",
+                "postInstallMessage": "## First steps\n\n1. Sign in with username `admin`. The initial password was generated during\n   installation and stored in `/app/data/.secrets/admin-initial-password`; open it\n   with the Cloudron File manager (Files, `.secrets`, `admin-initial-password`).\n2. Change that password immediately in Endurain under Settings, then delete the file.\n\n`<sso>`\nCloudron single sign-on is wired into Endurain's own OpenID Connect login: use the\n\"Cloudron\" button on the login page. Accounts created through SSO start as standard\nusers; promote them from the admin account if needed. The `admin` account itself stays\nlocal.\n</sso>\n`<nosso>`\nThis installation has single sign-on turned off, so Endurain manages its own accounts:\nsign in with the `admin` account above and add users inside the app. Turning single\nsign-on on later, from the app's Single Sign-On settings in Cloudron, adds a \"Cloudron\"\nbutton to the login page and leaves existing local accounts working.\n</nosso>\n\n## Devices and apps\n\nEndurain accepts FIT, GPX and TCX uploads. For automatic upload from Gadgetbridge,\nOpenTracks, FitoTrack and similar, create an API key in Endurain (Settings, API keys)\nand point the app at:\n\n`$CLOUDRON-APP-ORIGIN/api/v1/activities/upload`\n\nwith the key in the `X-API-Key` header; that endpoint needs no other header. The route\nchanged in Endurain 0.20: **every device client must be re-pointed from the old\n`/api/v1/activities/create/upload` to this one**, and some companion apps may not know the new route\nyet. The upload now answers `202` and imports in the background. Clients\nthat sign in to the wider JSON API (rather than using an API key) must send\n`X-Client-Type: mobile` on their requests, including login.\n\n## Importing from the server's disk\n\nBulk and Strava-export imports from disk now use one folder per user, in the Cloudron File manager\nunder `storage/activity_files/bulk_import/<user id>/` (Strava exports: `.../strava_import/<user id>/`),\nor upload the archive on Endurain's Import page. Files left in the old, shared `bulk_import` folder\nare no longer picked up: move them.\n\n## Integrations\n\nStrava and Garmin Connect are linked per user under Settings. Strava requires each\nuser to register their own (free) Strava API application; the values are stored\nencrypted. Reverse geocoding uses the public Nominatim service by default and the map\ntile server is configurable by the admin in Server settings.\n",
+                "manifestVersion": 2,
+                "minBoxVersion": "9.1.0",
+                "packagerName": "OrcVole",
+                "packagerUrl": "https://github.com/OrcVole/endurain-cloudron",
+                "contactEmail": "Most+github@OrcadianVole.com",
+                "website": "https://endurain.com",
+                "documentationUrl": "https://docs.endurain.com",
+                "iconUrl": "https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/logo.png",
+                "tags": [
+                    "fitness",
+                    "tracking",
+                    "health",
+                    "gpx",
+                    "strava",
+                    "garmin"
+                ],
+                "mediaLinks": [
+                    "https://raw.githubusercontent.com/OrcVole/endurain-cloudron/main/docs/screenshot.png"
+                ]
+            },
+            "creationDate": "Thu, 22 Oct 2026 21:38:07 GMT",
+            "ts": 1792705087000,
+            "publishState": "published"
         }
     }
 }

@@ -19,10 +19,10 @@ way Gadgetbridge does; export from the app and import through Endurain's own upl
 synced folder, in the meantime.
 
 For any client that does upload directly, create an API key in Endurain first, under **Settings,
-API keys**, then point the client at the upload endpoint:
+API keys**, then point the client at the upload endpoint (Endurain 0.20 moved it from `/activities/create/upload`; the old route no longer exists, so existing client configurations must be changed):
 
 ```text
-https://endurain.example.com/api/v1/activities/create/upload
+https://endurain.example.com/api/v1/activities/upload
 ```
 
 with the key in an `X-API-Key` header. That endpoint authenticates with the key alone and needs no

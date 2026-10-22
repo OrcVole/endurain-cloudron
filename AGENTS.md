@@ -88,10 +88,10 @@ Nothing is bundled; no `persistentDirs`, no `backupCommand`.
 ## Pinned upstream
 
 - `docker.io/cloudron/base:6.0.1@sha256:7b1e729960c3ca312d26e886917ba89483241bba0219ff292858e10d9d5768ee`
-- Endurain `v0.19.4`, commit `4eeb2cf47a88885155796f7c4dd7c9ec610913f5`, AGPL-3.0-or-later,
+- Endurain `v0.20.1`, commit `f537651809e51a35799d95ef591c667b8596559f`, AGPL-3.0-or-later,
   from `https://github.com/endurain-project/endurain.git` (upstream moved from Codeberg in 0.19.3)
-- uv `0.12.23` (project-pinned), tarball sha256
-  `9167d72b3319674b6303c4cbe071854bba13ebdf3d76b1a7cbdc175471fb66d6`
+- uv `0.12.24` (project-pinned), tarball sha256
+  `b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6`
 - Node `24.22.1`, builder stage only, from
   `https://nodejs.org/dist/v24.22.1/node-v24.22.1-linux-x64.tar.xz`, tarball sha256
   `6c172a9ab6718f7b801fb5a7bd486af2ee5e32758086a04b84fcce2aa77095e6`. Not supplied by
@@ -103,8 +103,9 @@ Nothing is bundled; no `persistentDirs`, no `backupCommand`.
 | Application variable | Source |
 |---|---|
 | `DB_HOST/PORT/USER/PASSWORD/DATABASE` | `CLOUDRON_POSTGRESQL_*` |
-| `RATE_LIMIT_STORAGE_URI`, `AUTH_SECURITY_STORAGE_URI` | `CLOUDRON_REDIS_URL` |
-| `SMTP_HOST/PORT/USERNAME/PASSWORD/FROM` | `CLOUDRON_MAIL_SMTP_*`, `CLOUDRON_MAIL_FROM` |
+| `STATE_URI` | `CLOUDRON_REDIS_URL` (never `REDIS_URL`; `RATE_LIMIT_STORAGE_URI` and `AUTH_SECURITY_STORAGE_URI` are refused by 0.20 if present at all) |
+| `JOBS_ENABLED` | `true` (durable uploads, imports, mail on PostgreSQL) |
+| `SMTP_HOST/PORT/USERNAME/PASSWORD/FROM` | `CLOUDRON_MAIL_STARTTLS_PORT` with the addon credentials; `SMTP_HOST` is chosen at boot by `mailhost.py` (a name the mail certificate covers that passes a verified STARTTLS handshake); `SMTP_SECURE=true` |
 | `ENDURAIN_HOST` | `CLOUDRON_APP_ORIGIN` |
 | `BEHIND_PROXY` | `true` |
 | `TRUSTED_PROXIES` | `CLOUDRON_PROXY_IP` |
@@ -121,6 +122,6 @@ backup; Redis state is disposable by upstream's own guidance. The restore gate p
 ## Future compatibility
 
 Version bumps: change `ARG ENDURAIN_VERSION` (and the expected commit), rebuild,
-re-ladder. Alembic migrates forward automatically at boot. Watch: upstream's declared
+re-ladder. Alembic migrates forward automatically at boot, and since 0.20 the application also runs its own substrate migration and data migrations (thumbnails to WebP, media and photo paths to keys) inside start-up before the port opens, so the app is unhealthy for a while after a major update. Those migrations delete the old PNG thumbnails: restoring a backup is the only way back. Watch: upstream's declared
 monthly cadence; the uv `required-version` pin moves with upstream; the frontend
 rewrite at 0.19.0 means UI-level docs and screenshots date quickly.

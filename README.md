@@ -20,7 +20,7 @@ built frontend, and connects it to the following Cloudron addons.
 | Addon | Used for |
 |---|---|
 | `postgresql` | The application database |
-| `redis` | Rate-limit and authentication-lockout state (upstream treats this as disposable) |
+| `redis` | Shared state store (`STATE_URI`): rate-limit counters, authentication lockout, pending-MFA tickets; disposable. Not the event bus (`REDIS_URL` is never set) |
 | `sendmail` | Outgoing mail, for example password resets |
 | `oidc` | Optional Cloudron single sign-on, fed into Endurain's own OpenID Connect login |
 | `localstorage` | Persistent storage under `/app/data`: uploaded activity files and package secrets |
@@ -105,7 +105,7 @@ API keys, created under **Settings, API keys**, let devices and companion apps u
 without a browser session. Point Gadgetbridge, OpenTracks, FitoTrack or similar at:
 
 ```text
-https://endurain.example.com/api/v1/activities/create/upload
+https://endurain.example.com/api/v1/activities/upload
 ```
 
 with the key in an `X-API-Key` header. See [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) for
@@ -119,26 +119,14 @@ device-specific notes.
 
 ## Known issues
 
-Two faults in the application itself, found while packaging and verified on a real installation, are
-worth knowing about before you rely on this for anything important. Both are reported upstream with
-evidence in [`docs/FOR-UPSTREAM.md`](docs/FOR-UPSTREAM.md); neither is caused by the packaging, and
-neither can be fixed from outside the application.
-
-**Uploading several activities at once can wedge the instance.** Concurrent uploads can leave database
-connections stranded in an open transaction, after which every request that needs the database waits
-indefinitely: no login, no upload, no page that reads anything. The application does not recover on
-its own. Restarting it clears the condition immediately and loses nothing.
-
-This package mitigates the operational half of that. Its health check reads the database rather than
-returning a static response, so an instance in this state is detected and restarted automatically by
-the platform instead of sitting there looking healthy (see
-[ADR 0004](docs/decisions/0004-health-check-touches-the-database.md)). The underlying leak still needs
-an upstream fix. If you are importing a backlog, upload a few at a time rather than in parallel.
-
-**Two activities sharing a start time break later uploads at that timestamp.** The duplicate check
-assumes at most one activity per start time and raises an error when it finds two, which the upload
-path itself can produce. Once that has happened, any further upload with that same start time fails
-with a server error until one of the duplicates is deleted.
+Two faults were found in Endurain 0.19 while packaging and are written up in
+[`docs/FOR-UPSTREAM.md`](docs/FOR-UPSTREAM.md): concurrent uploads could leave database connections
+stranded and stop the instance answering until a restart, and two activities sharing a start time
+broke later uploads at that timestamp. Endurain 0.20 replaced the upload path (uploads are now
+queued jobs, and activities carry a unique de-duplication key), so neither claim has been carried
+forward as current: they have not been re-tested on 0.20. The package's health check still reads the
+database (see [ADR 0004](docs/decisions/0004-health-check-touches-the-database.md)), so a wedged
+instance is restarted by the platform, and uploading a backlog a few files at a time remains sensible.
 
 **The API documentation is public.** `/docs` and `/openapi.json` are served without authentication, as
 they are upstream by default. No data is exposed, but every installation publishes its complete API
@@ -151,7 +139,7 @@ Cloudron's `postgresql` addon dumps the application database logically as part o
 backup, and `/app/data`, which holds uploaded activity files together with the package's generated
 secrets, rides the standard file backup provided by the `localstorage` addon.
 
-Redis holds only rate-limit and authentication-lockout state, which upstream itself documents as
+Redis holds only the shared state store (rate-limit counters, authentication lockout, pending-MFA tickets), which upstream itself documents as
 disposable. It is not specially preserved: a fresh, empty Redis simply lets that state rebuild from
 normal traffic after a restore.
 

@@ -1,4 +1,4 @@
-<upstream>0.19.4</upstream>
+<upstream>0.20.1</upstream>
 
 Endurain is a self-hosted fitness tracking platform for endurance sports: running,
 cycling, hiking, swimming, gym work and more. Upload activities as FIT, GPX or TCX
