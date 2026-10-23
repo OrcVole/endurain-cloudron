@@ -17,6 +17,16 @@ thinking about deployment and operations.
   the packaging announcement rather than as issues, since the project asks that issues be opened one
   thing at a time and its maintainer is a single person working in their spare time.
 
+**Status update, 2026-10-23** (from the maintainer, after the project moved from Codeberg to GitHub; the
+announcement is now GitHub issue [#723](https://github.com/endurain-project/endurain/issues/723)):
+
+- Duplicate start times: fixed and closed as [#724](https://github.com/endurain-project/endurain/issues/724).
+- Transaction leak on the upload path: fixed by 0.20.1, the maintainer says (0.20 reworked uploads and
+  transactions). **Not yet re-measured by this package**; the concurrent-upload test below is still owed.
+- Pool exhaustion hang, `/about` as a health signal, the libc and Python floor, and the `X-Client-Type` 401:
+  planned for 0.20.2. This package keeps its database-touching health check until then (ADR 0004).
+- The seeded `admin` / `admin` account: its own issue, [#783](https://github.com/endurain-project/endurain/issues/783).
+
 ## The seeded admin / admin credential
 
 The first database migration seeds a live `admin` account with the well-known password `admin`.
